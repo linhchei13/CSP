@@ -579,7 +579,6 @@ if __name__ == "__main__":
                 lines = line.strip().split()
                
                 demand = int(lines[2])
-                print("demand", demand)
                 for i in range(demand):
                     rectangles.append([int(lines[0]), int(lines[1])])
                 

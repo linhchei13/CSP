@@ -131,7 +131,6 @@ def read_file_instance(instance_name):
     
     filepath = None
     for path in possible_paths:
-        print(path)
         if os.path.exists(path):
             filepath = path
             break
@@ -559,7 +558,7 @@ if __name__ == "__main__":
             os.makedirs('CSP_R_SB')
         
         # Read existing Excel file to check completed instances
-        excel_file = 'CSP_R_SB_new.xlsx'
+        excel_file = 'CSP_R_SB.xlsx'
         if os.path.exists(excel_file):
             try:
                 existing_df = pd.read_excel(excel_file)
@@ -690,7 +689,6 @@ if __name__ == "__main__":
             rectangles = []
             for line in input_data[2:2 + n_items]:
                 demand = int(line.split()[2])
-                print("demand", demand)
                 for i in range(demand):
                     rectangles.append([int(line.split()[0]), int(line.split()[1])])
             
@@ -728,7 +726,7 @@ if __name__ == "__main__":
             }
             
             # Save to Excel
-            excel_file = 'CSP_R_SB_new.xlsx'
+            excel_file = 'CSP_R_SB.xlsx'
             if os.path.exists(excel_file):
                 try:
                     existing_df = pd.read_excel(excel_file)
@@ -770,7 +768,7 @@ if __name__ == "__main__":
             }
             
             # Save error result to Excel
-            excel_file = 'CSP_R_SB_new.xlsx'
+            excel_file = 'CSP_R_SB.xlsx'
             if os.path.exists(excel_file):
                 try:
                     existing_df = pd.read_excel(excel_file)

@@ -472,7 +472,7 @@ def OPP(rectangles, max_bins, bin_width, bin_height):
         ub = max_bins
         print(f"Initial lower bound: {lb}, upper bound: {ub}")
         while lb <= ub:
-            mid = (lb + ub) // 2
+            mid = math.ceil((lb + ub) // 2)
             print(f"Trying {mid} bins (range: {lb}-{ub})")
             assumptions = [-variables[f"b{j + 1}"] for j in range(mid, upper_bound)]
 
@@ -551,6 +551,7 @@ if __name__ == "__main__":
         
         # Read existing Excel file to check completed instances
         excel_file = 'CSP_INC_R_SB.xlsx'
+        completed_instances = []
         if os.path.exists(excel_file):
             try:
                 existing_df = pd.read_excel(excel_file)
@@ -560,7 +561,7 @@ if __name__ == "__main__":
                 completed_instances = []
         
         # Set timeout
-        TIMEOUT = 3600
+        TIMEOUT = 900
     
         # Start from instance 1 (skip index 0 which is empty)
         for instance_id in range(1, len(instances)):
@@ -687,9 +688,9 @@ if __name__ == "__main__":
             print("Runtime", runtime)
             
             # Display solution
-            if optimal_solution:
-                bins_assignment, positions = optimal_solution
-                display_solution(bin_width, bin_height, rectangles, bins_assignment, positions, optimal_rotations, instance_name)
+            # if optimal_solution:
+            #     bins_assignment, positions = optimal_solution
+            #     display_solution(bin_width, bin_height, rectangles, bins_assignment, positions, optimal_rotations, instance_name)
             
             # Create result
             result = {

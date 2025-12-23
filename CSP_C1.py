@@ -166,31 +166,6 @@ instances = [
     "Hchl1", "Hchl2", "Hchl3s", "Hchl4s", "Hchl5s", "Hchl6s",
     "Hchl7s","Hchl8s", "Hchl9", ]
 
-if os.path.exists("all_instances.txt"):
-    with open("all_instances.txt", "r") as f:
-        instances = [
-    "BENG01", "BENG02", "BENG03", "BENG04", "BENG05",
-    "BENG06", "BENG07", "BENG08", "BENG09", "BENG10",
-    # WANG instances (3 instances)
-    "WANG1", "WANG2", "WANG3",
-    # ngcut (12 instances)
-    "ngcut1", "ngcut2", "ngcut3", "ngcut4", "ngcut5", "ngcut6",
-    "ngcut7", "ngcut8", "ngcut9", "ngcut10", "ngcut11", "ngcut12",
-    # cgcut (3 instances)
-    "cgcut1", "cgcut2", "cgcut3"
-    # Hifi
-    "A1", "A2", "A3", "A4", "A5", "HH"
-    # CHL
-    "CHL1", "CHL2", "CHL3", "CHL4", "CHL5", "CHL6", "CHL7",
-    "Hchl1", "Hchl2", "Hchl3s", "Hchl4s", "Hchl5s", "Hchl6s",
-    "Hchl7s","Hchl8s", "Hchl9",
-    # Hifi
-    "A1", "A2", "A3", "A4", "A5", "HH"
-    # CHL
-    "CHL1", "CHL2", "CHL3", "CHL4", "CHL5", "CHL6", "CHL7",
-    "Hchl1", "Hchl2", "Hchl3s", "Hchl4s", "Hchl5s", "Hchl6s",
-    "Hchl7s","Hchl8s", "Hchl9", ]
-
 def positive_range(end):
     if end < 0:
         return []
@@ -500,7 +475,7 @@ def CSP(lower, upper, bin_width, bin_height, rectangles):
     optimal_solution = None
     
     while lower <= upper:
-        mid = (lower + upper) // 2
+        mid = math.ceil((lower + upper) / 2)
         print(f"Trying {mid} bins (range: {lower}-{upper})")
         
         result = OPP(rectangles, mid, bin_width, bin_height)
@@ -656,7 +631,6 @@ if __name__ == "__main__":
             rectangles = []
             for line in input_data[2:2 + n_items]:
                 demand = int(line.split()[2])
-                print("demand", demand)
                 for i in range(demand):
                     rectangles.append([int(line.split()[0]), int(line.split()[1])])
             

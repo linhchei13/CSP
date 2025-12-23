@@ -123,7 +123,7 @@ def read_file_instance(instance_name):
     possible_paths = [
         f"inputs/{instance_name}.txt",
         f"inputs/BENG/{instance_name}.txt",
-        f"inputs/CLASS/{instance_name}.txt"
+        f"inputs/CLASS/{instance_name}.txt",
         f"inputs/WANG/{instance_name}",
         f'inputs/NGCUT/{instance_name}',
         f'inputs/CGCUT/{instance_name}',
@@ -492,7 +492,7 @@ def CSP(lower, upper, bin_width, bin_height, rectangles):
     optimal_rotations = []
     
     while lower <= upper:
-        mid = (lower + upper) // 2
+        mid = math.ceil((lower + upper) / 2)
         print(f"Trying {mid} bins (range: {lower}-{upper})")
         
         result = OPP(rectangles, mid, bin_width, bin_height)
@@ -649,7 +649,6 @@ if __name__ == "__main__":
             rectangles = []
             for line in input_data[2:2 + n_items]:
                 demand = int(line.split()[2])
-                print("demand", demand)
                 for i in range(demand):
                     rectangles.append([int(line.split()[0]), int(line.split()[1])])
             

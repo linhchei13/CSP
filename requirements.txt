@@ -3,3 +3,6 @@ pandas
 matplotlib
 numpy
 openpyxl
+ortools
+gurobipy
+cplex

@@ -421,7 +421,7 @@ def OPP(rectangles, upper_bound, bin_width, bin_height):
         ub = upper_bound
         print(f"Lower bound: {lb}, Upper bound: {ub}")
         while lb <= ub:
-            mid = (lb + ub) // 2
+            mid = math.ceil((lb + ub) / 2)
             print(f"Trying {mid} bins")
             # Add bin usage constraint for mid bins
             assumptions = [-variables[f"b{j + 1}"] for j in range(mid, upper_bound)]
@@ -496,23 +496,7 @@ if __name__ == "__main__":
                 completed_instances = existing_df['Instance'].tolist() if 'Instance' in existing_df.columns else []
             except:
                 existing_df = pd.DataFrame()
-                completed_instances = [
-    # BENG instances (10 instances)
-    "BENG01", "BENG02", "BENG03", "BENG04", "BENG05",
-    "BENG06", "BENG07", "BENG08", "BENG09", "BENG10",
-    # WANG instances (3 instances)
-    "WANG1", "WANG2", "WANG3",
-    # ngcut (12 instances)
-    "ngcut1", "ngcut2", "ngcut3", "ngcut4", "ngcut5", "ngcut6",
-    "ngcut7", "ngcut8", "ngcut9", "ngcut10", "ngcut11", "ngcut12",
-    # cgcut (3 instances)
-    "cgcut1", "cgcut2", "cgcut3",
-    # Hifi
-    "A1", "A2", "A3", "A4", "A5", "HH",
-    # CHL
-    "CHL1", "CHL2", "CHL3", "CHL4", "CHL5", "CHL6", "CHL7",
-    "Hchl1", "Hchl2", "Hchl3s", "Hchl4s", "Hchl5s", "Hchl6s",
-    "Hchl7s","Hchl8s", "Hchl9", ]
+                completed_instances = []
         else:
             existing_df = pd.DataFrame()
             completed_instances = []
@@ -621,7 +605,6 @@ if __name__ == "__main__":
             rectangles = []
             for line in input_data[2:2 + n_items]:
                 demand = int(line.split()[2])
-                print("demand", demand)
                 for i in range(demand):
                     rectangles.append([int(line.split()[0]), int(line.split()[1])])
             
@@ -645,9 +628,9 @@ if __name__ == "__main__":
             optimal_bins = best_num_bins if best_num_bins != float('inf') else upper_bound
 
             # Display solution
-            if optimal_solution:
-                bins_assignment, positions = optimal_solution
-                display_solution(bin_width, bin_height, rectangles, bins_assignment, positions, instance_name)
+            # if optimal_solution:
+            #     bins_assignment, positions = optimal_solution
+            #     display_solution(bin_width, bin_height, rectangles, bins_assignment, positions, instance_name)
 
             # Create result
             result = {
