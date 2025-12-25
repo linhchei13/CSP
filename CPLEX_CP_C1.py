@@ -66,13 +66,9 @@ def read_file_instance(instance_name):
     else:
         # For other instances, try different folders
         possible_paths = [
-            f"inputs/{instance_name}.txt",
-            f"inputs/BENG/{instance_name}.txt",
-             f"inputs/WANG/{instance_name}",
-             f"inputs/NGCUT/{instance_name}",
-            f"inputs/CGCUT/{instance_name}", 
-            f"inputs/HIFI1997_format/{instance_name}",
-            f"inputs/CHL_format/{instance_name}.txt"
+           f"inputs/set1/{instance_name}.txt",
+            f"inputs/set2/{instance_name}.txt",
+             f"inputs/set3/{instance_name}.txt",
         ]
         
         filepath = None
@@ -92,26 +88,38 @@ def read_file_instance(instance_name):
     
     return s.splitlines()
 
-# Updated instance list with actual available instances
-instances = [
+set1 = [
     "",
-    # BENG instances (10 instances)
-     # BENG instances (10 instances)
-    "BENG01", "BENG02", "BENG03", "BENG04", "BENG05",
-    "BENG06", "BENG07", "BENG08", "BENG09", "BENG10",
-    # WANG instances (3 instances)
-    "WANG1", "WANG2", "WANG3",
-    # ngcut (12 instances)
-    "ngcut1", "ngcut2", "ngcut3", "ngcut4", "ngcut5", "ngcut6",
-    "ngcut7", "ngcut8", "ngcut9", "ngcut10", "ngcut11", "ngcut12",
-    # cgcut (3 instances)
-    "cgcut1", "cgcut2", "cgcut3",
-    # Hifi
-    "A1", "A2", "A3", "A4", "A5", "HH",
-    # CHL
-    "CHL1", "CHL2", "CHL3", "CHL4", "CHL5", "CHL6", "CHL7",
-    "Hchl1", "Hchl2", "Hchl3s", "Hchl4s", "Hchl5s", "Hchl6s",
-    "Hchl7s","Hchl8s", "Hchl9", ]
+    "gcut1", "gcut2", "gcut3", "gcut4",
+    "gcut5", "gcut6", "gcut7", "gcut8", "gcut9",
+    "gcut10", "gcut11", "gcut12", "gcut13", "gcut14",
+    "gcut15", "gcut16", "gcut17"
+]
+
+# small set
+set2 = [
+    "",
+    "A1", "A2", "A3", "A4", "A5", 
+    "CHL1", "CHL2", "CHL5", "CHL6", "CHL7",
+    "CU1", "CU2",
+    "CW1", "CW2", "CW3",
+     "Hchl2", "Hchl3s", "Hchl4s", "Hchl5s", "Hchl6s",
+    "Hchl7s", "Hchl8s", "Hchl9",
+    "HH", "OF1", "OF2",
+    "STS2", "STS4", "W", "2", "3"
+    
+]
+
+
+set3 = [
+    "",
+    "ATP30", "ATP31", "ATP32", "ATP33", "ATP34",
+    "ATP35", "ATP36", "ATP37", "ATP38", "ATP39",
+    "ATP40", "ATP41", "ATP42", "ATP43", "ATP44",
+    "ATP45", "ATP46", "ATP47", "ATP48", "ATP49"
+]
+# Updated instance list with actual available instances
+instances = set1 + set2 + set3
 
 def first_fit_upper_bound(rectangles, W, H):
     """First-fit heuristic to get upper bound"""

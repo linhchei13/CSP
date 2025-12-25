@@ -483,33 +483,34 @@ def CSP(lower, upper, bin_width, bin_height, rectangles):
     optimal_solution = None
     
     # Step 1: First solve with upper bound to verify feasibility
-    print(f"Step 1: Solving with upper bound ({upper} bins) first...")
-    result = OPP(rectangles, upper, bin_width, bin_height)
+    # print(f"Step 1: Solving with upper bound ({upper} bins) first...")
+    # result = OPP(rectangles, upper, bin_width, bin_height)
     
-    if result == "unsat":
-        print(f"UNSAT with upper bound {upper} bins - problem infeasible!")
-        return upper
-    else:
-        print(f"SAT with upper bound {upper} bins - starting binary search...")
-        optimal_bins = upper
-        best_num_bins = upper
-        optimal_solution = result[1:]
-        upper = upper - 1  # Now we can try fewer bins
+    # if result == "unsat":
+    #     print(f"UNSAT with upper bound {upper} bins - problem infeasible!")
+    #     return upper
+    # else:
+    #     print(f"SAT with upper bound {upper} bins - starting binary search...")
+    #     optimal_bins = upper
+    #     best_num_bins = upper
+    #     optimal_solution = result[1:]
+    #     upper = upper - 1  # Now we can try fewer bins
     
     # Step 2: Binary search for optimal solution
-    while lower <= upper:
-        mid = math.ceil((lower + upper) / 2)
+    mid = upper
+    while mid >=lower:
+        # mid = math.ceil((lower + upper) / 2)
         print(f"Trying {mid} bins (range: {lower}-{upper})")
         
         result = OPP(rectangles, mid, bin_width, bin_height)
         
         if result == "unsat":
-            lower = mid + 1
+            mid = mid + 1
         else:
             optimal_bins = mid
             best_num_bins = mid
             optimal_solution = result[1:]
-            upper = mid - 1
+            mid = mid - 1
     
     return optimal_bins
 
