@@ -1,3 +1,7 @@
+"""
+2D Bin Packing Problem - Non-Stacking Version with CP using OR-Tools
+Symmetry Breaking: C1 (Enhanced implementation)
+"""
 
 from ortools.sat.python import cp_model
 import matplotlib.pyplot as plt
@@ -19,7 +23,6 @@ import pandas as pd
 best_bins = float('inf')
 best_assignments = []
 best_positions = []
-best_rotations = []
 upper_bound = 0
 
 # Signal handler for graceful interruption
@@ -37,7 +40,7 @@ def handle_interrupt(signum, frame):
         'Status': 'TIMEOUT'
     }
     
-    with open(f'results_OR-TOOLS_CP_R_SB_{instance_id}.json', 'w') as f:
+    with open(f'results_OR-TOOLS_CP_C1_{instance_id}.json', 'w') as f:
         json.dump(result, f)
     
     sys.exit(0)
@@ -47,9 +50,8 @@ signal.signal(signal.SIGTERM, handle_interrupt)
 signal.signal(signal.SIGINT, handle_interrupt)
 
 # Create output folder if it doesn't exist
-if not os.path.exists('OR-TOOLS_CP_R_SB'):
-    os.makedirs('OR-TOOLS_CP_R_SB')
-
+if not os.path.exists('OR-TOOLS_CP_C1'):
+    os.makedirs('OR-TOOLS_CP_C1')
 
 def read_file_instance(instance_name):
     """Read instance file based on instance name"""
@@ -118,8 +120,8 @@ set3 = [
 # Updated instance list with actual available instances
 instances = set2
 
-def first_fit_upper_bound_with_rotation(rectangles, W, H):
-    """First-fit heuristic to get upper bound with rotation allowed"""
+def first_fit_upper_bound(rectangles, W, H):
+    """First-fit heuristic to get upper bound"""
     # Each bin is a list of placed rectangles: (x, y, w, h)
     bins = []
     
@@ -141,32 +143,18 @@ def first_fit_upper_bound_with_rotation(rectangles, W, H):
         w, h = rect[0], rect[1]
         placed = False
         
-        # Try both orientations
-        orientations = [(w, h), (h, w)] if w != h else [(w, h)]
-        
-        for ow, oh in orientations:
-            if ow <= W and oh <= H:
-                # Try to place in existing bins
-                for bin_rects in bins:
-                    pos = fits(bin_rects, ow, oh, W, H)
-                    if pos is not None:
-                        bin_rects.append((pos[0], pos[1], ow, oh))
-                        placed = True
-                        break
-                
-                if placed:
-                    break
+        # Try to place in existing bins
+        for bin_rects in bins:
+            pos = fits(bin_rects, w, h, W, H)
+            if pos is not None:
+                bin_rects.append((pos[0], pos[1], w, h))
+                placed = True
+                break
         
         # If not placed, create a new bin
         if not placed:
-            best_orient = None
-            for ow, oh in orientations:
-                if ow <= W and oh <= H:
-                    best_orient = (ow, oh)
-                    break
-            
-            if best_orient:
-                bins.append([(0, 0, best_orient[0], best_orient[1])])
+            if w <= W and h <= H:
+                bins.append([(0, 0, w, h)])
             else:
                 # Rectangle doesn't fit in any bin
                 return float('inf')
@@ -187,25 +175,24 @@ def save_checkpoint(instance_id, bins, status="IN_PROGRESS"):
         'Status': status
     }
     
-    with open(f'checkpoint_OR-TOOLS_CP_R_SB_{instance_id}.json', 'w') as f:
+    with open(f'checkpoint_OR-TOOLS_CP_C1_{instance_id}.json', 'w') as f:
         json.dump(checkpoint, f)
 
 class SolutionCallback(cp_model.CpSolverSolutionCallback):
     """Callback to track best solutions found during solving"""
     
-    def __init__(self, u_vars, z_vars, x_vars, y_vars, rotate_vars, n_items, max_bins):
+    def __init__(self, u_vars, z_vars, x_vars, y_vars, n_items, max_bins):
         cp_model.CpSolverSolutionCallback.__init__(self)
         self.u_vars = u_vars
         self.z_vars = z_vars
         self.x_vars = x_vars
         self.y_vars = y_vars
-        self.rotate_vars = rotate_vars
         self.n_items = n_items
         self.max_bins = max_bins
         self.solution_count = 0
         
     def on_solution_callback(self):
-        global best_bins, best_assignments, best_positions, best_rotations
+        global best_bins, best_assignments, best_positions
         
         self.solution_count += 1
         
@@ -216,31 +203,28 @@ class SolutionCallback(cp_model.CpSolverSolutionCallback):
         if bins_used < best_bins:
             best_bins = bins_used
             
-            # Extract assignments, positions, and rotations
+            # Extract assignments and positions
             assignments = [-1] * self.n_items
             positions = [(0, 0)] * self.n_items
-            rotations = [0] * self.n_items
             
             for i in range(self.n_items):
                 for b in range(self.max_bins):
                     if self.Value(self.z_vars[i,b]) == 1:
                         assignments[i] = b
                         positions[i] = (self.Value(self.x_vars[i,b]), self.Value(self.y_vars[i,b]))
-                        rotations[i] = self.Value(self.rotate_vars[i])
                         break
             
             best_assignments = assignments.copy()
             best_positions = positions.copy()
-            best_rotations = rotations.copy()
             
             # Save checkpoint with better solution
             save_checkpoint(instance_id, best_bins)
             
             print(f"  New best solution found: {bins_used} bins (solution #{self.solution_count})")
 
-def solve_bin_packing_with_rotation(W, H, rectangles, time_limit=600):
+def solve_bin_packing(W, H, rectangles, time_limit=1800):
     """
-    Solves the 2D Bin Packing Problem with rotation using OR-Tools CP-SAT with objective minimization.
+    Solves the 2D Bin Packing Problem using OR-Tools CP-SAT with objective minimization.
     
     Args:
         W: Width of each bin
@@ -249,9 +233,9 @@ def solve_bin_packing_with_rotation(W, H, rectangles, time_limit=600):
         time_limit: Time limit for the solver in seconds
         
     Returns:
-        dict with optimal number of bins, assignments, positions and rotations
+        dict with optimal number of bins, assignments and positions
     """
-    global best_bins, best_assignments, best_positions, best_rotations, upper_bound
+    global best_bins, best_assignments, best_positions, upper_bound
     
     # Create the model
     model = cp_model.CpModel()
@@ -259,7 +243,7 @@ def solve_bin_packing_with_rotation(W, H, rectangles, time_limit=600):
     n = len(rectangles)
     
     # Calculate upper bound
-    ub = min(n, first_fit_upper_bound_with_rotation(rectangles, W, H))
+    ub = min(n, first_fit_upper_bound(rectangles, W, H))
     upper_bound = ub
     max_bins = ub  # Use upper bound as maximum number of bins
     
@@ -270,34 +254,12 @@ def solve_bin_packing_with_rotation(W, H, rectangles, time_limit=600):
     x = {}
     y = {}
     z = {}  # z[i,b] = 1 if item i is assigned to bin b
-    rotate = {}  # rotate[i] = 1 if item i is rotated
     
     for i in range(n):
-        rotate[i] = model.NewBoolVar(f'rotate_{i}')
         for b in range(max_bins):
-            # Max possible width/height considering rotation
-            max_w = max(rectangles[i][0], rectangles[i][1])
-            max_h = max(rectangles[i][0], rectangles[i][1])
-            
-            x[i,b] = model.NewIntVar(0, W - min(rectangles[i][0], rectangles[i][1]), f'x_{i}_{b}')
-            y[i,b] = model.NewIntVar(0, H - min(rectangles[i][0], rectangles[i][1]), f'y_{i}_{b}')
+            x[i,b] = model.NewIntVar(0, W - rectangles[i][0], f'x_{i}_{b}')
+            y[i,b] = model.NewIntVar(0, H - rectangles[i][1], f'y_{i}_{b}')
             z[i,b] = model.NewBoolVar(f'z_{i}_{b}')
-    
-    # Variables for actual width and height after rotation
-    actual_width = {}
-    actual_height = {}
-    
-    for i in range(n):
-        w_orig, h_orig = rectangles[i]
-        
-        actual_width[i] = model.NewIntVar(min(w_orig, h_orig), max(w_orig, h_orig), f'width_{i}')
-        actual_height[i] = model.NewIntVar(min(w_orig, h_orig), max(w_orig, h_orig), f'height_{i}')
-        
-        # Set actual dimensions based on rotation
-        model.Add(actual_width[i] == w_orig).OnlyEnforceIf(rotate[i].Not())
-        model.Add(actual_width[i] == h_orig).OnlyEnforceIf(rotate[i])
-        model.Add(actual_height[i] == h_orig).OnlyEnforceIf(rotate[i].Not())
-        model.Add(actual_height[i] == w_orig).OnlyEnforceIf(rotate[i])
     
     # Bin usage variables
     u = {}  # u[b] = 1 if bin b is used
@@ -312,12 +274,6 @@ def solve_bin_packing_with_rotation(W, H, rectangles, time_limit=600):
     for b in range(max_bins):
         for i in range(n):
             model.Add(z[i,b] <= u[b])
-    
-    # Boundary constraints considering rotation
-    for i in range(n):
-        for b in range(max_bins):
-            model.Add(x[i,b] + actual_width[i] <= W).OnlyEnforceIf(z[i,b])
-            model.Add(y[i,b] + actual_height[i] <= H).OnlyEnforceIf(z[i,b])
     
     # C1 Symmetry Breaking: Bins are used in order
     for b in range(1, max_bins):
@@ -337,8 +293,8 @@ def solve_bin_packing_with_rotation(W, H, rectangles, time_limit=600):
         model.Add(z[max_area_idx, 0] == 1)
         
         # Position the largest rectangle in the bottom-left quadrant
-        model.Add(x[max_area_idx, 0] <= (W - min(rectangles[max_area_idx])) // 2)
-        model.Add(y[max_area_idx, 0] <= (H - min(rectangles[max_area_idx])) // 2)
+        model.Add(x[max_area_idx, 0] <= (W - rectangles[max_area_idx][0]) // 2)
+        model.Add(y[max_area_idx, 0] <= (H - rectangles[max_area_idx][1]) // 2)
     
     # Non-overlapping constraints within each bin
     for b in range(max_bins):
@@ -350,11 +306,11 @@ def solve_bin_packing_with_rotation(W, H, rectangles, time_limit=600):
                 b_below_i_j = model.NewBoolVar(f'b_below_{i}_{j}_{b}')
                 b_below_j_i = model.NewBoolVar(f'b_below_{j}_{i}_{b}')
                 
-                # Position constraints using actual dimensions
-                model.Add(x[i,b] + actual_width[i] <= x[j,b]).OnlyEnforceIf(b_left_i_j)
-                model.Add(x[j,b] + actual_width[j] <= x[i,b]).OnlyEnforceIf(b_left_j_i)
-                model.Add(y[i,b] + actual_height[i] <= y[j,b]).OnlyEnforceIf(b_below_i_j)
-                model.Add(y[j,b] + actual_height[j] <= y[i,b]).OnlyEnforceIf(b_below_j_i)
+                # Position constraints
+                model.Add(x[i,b] + rectangles[i][0] <= x[j,b]).OnlyEnforceIf(b_left_i_j)
+                model.Add(x[j,b] + rectangles[j][0] <= x[i,b]).OnlyEnforceIf(b_left_j_i)
+                model.Add(y[i,b] + rectangles[i][1] <= y[j,b]).OnlyEnforceIf(b_below_i_j)
+                model.Add(y[j,b] + rectangles[j][1] <= y[i,b]).OnlyEnforceIf(b_below_j_i)
                 
                 # If both items are in this bin, they must not overlap
                 both_in_bin = model.NewBoolVar(f'both_in_bin_{i}_{j}_{b}')
@@ -364,39 +320,22 @@ def solve_bin_packing_with_rotation(W, H, rectangles, time_limit=600):
                 # When both items are in the same bin, at least one arrangement must be true
                 model.Add(b_left_i_j + b_left_j_i + b_below_i_j + b_below_j_i >= 1).OnlyEnforceIf(both_in_bin)
                 
-                # C1 Symmetry Breaking - Large rectangles with rotation
-                w_i, h_i = rectangles[i]
-                w_j, h_j = rectangles[j]
-                
-                # Minimum possible width after rotation for both rectangles
-                min_width_i = min(w_i, h_i)
-                min_width_j = min(w_j, h_j)
-                
-                if min_width_i + min_width_j > W:
-                    # If two rectangles can't fit side by side even with rotation, disable horizontal
+                # C1 Symmetry Breaking - Large rectangles
+                if rectangles[i][0] + rectangles[j][0] > W:
+                    # If two rectangles can't fit side by side, they must be stacked vertically
                     model.Add(b_left_i_j == 0).OnlyEnforceIf(both_in_bin)
                     model.Add(b_left_j_i == 0).OnlyEnforceIf(both_in_bin)
                 
-                # Minimum possible height after rotation for both rectangles
-                min_height_i = min(w_i, h_i)
-                min_height_j = min(w_j, h_j)
-                
-                if min_height_i + min_height_j > H:
-                    # If two rectangles can't fit vertically even with rotation, disable vertical
+                if rectangles[i][1] + rectangles[j][1] > H:
+                    # If two rectangles can't fit vertically, they must be placed side by side
                     model.Add(b_below_i_j == 0).OnlyEnforceIf(both_in_bin)
                     model.Add(b_below_j_i == 0).OnlyEnforceIf(both_in_bin)
     
-    # Same-sized rectangles C1 constraint (considering rotation)
+    # Same-sized rectangles C1 constraint
     for i in range(n):
         for j in range(i+1, n):
-            # Check if rectangles are equivalent (same dimensions possibly rotated)
-            w_i, h_i = rectangles[i]
-            w_j, h_j = rectangles[j]
-            
-            equivalent = (w_i == w_j and h_i == h_j) or (w_i == h_j and h_i == w_j)
-            
-            if equivalent:
-                # For equivalent rectangles, apply ordering
+            if rectangles[i][0] == rectangles[j][0] and rectangles[i][1] == rectangles[j][1]:
+                # For identical rectangles, apply ordering: i must come before j
                 for b in range(max_bins):
                     for b2 in range(b):
                         # If i is in bin b and j is in bin b2, then b < b2 is invalid
@@ -404,7 +343,7 @@ def solve_bin_packing_with_rotation(W, H, rectangles, time_limit=600):
                 
                 # If both in same bin, impose ordering (lexicographic)
                 for b in range(max_bins):
-                    both_in_bin = model.NewBoolVar(f'equiv_both_in_bin_{i}_{j}_{b}')
+                    both_in_bin = model.NewBoolVar(f'same_both_in_bin_{i}_{j}_{b}')
                     model.Add(z[i,b] + z[j,b] == 2).OnlyEnforceIf(both_in_bin)
                     model.Add(z[i,b] + z[j,b] <= 1).OnlyEnforceIf(both_in_bin.Not())
                     
@@ -425,7 +364,7 @@ def solve_bin_packing_with_rotation(W, H, rectangles, time_limit=600):
     save_checkpoint(instance_id, best_bins if best_bins != float('inf') else upper_bound)
     
     # Create callback to track solutions
-    solution_callback = SolutionCallback(u, z, x, y, rotate, n, max_bins)
+    solution_callback = SolutionCallback(u, z, x, y, n, max_bins)
     
     # Solve with CP-SAT
     solver = cp_model.CpSolver()
@@ -449,22 +388,19 @@ def solve_bin_packing_with_rotation(W, H, rectangles, time_limit=600):
         if bins_used < best_bins:
             best_bins = bins_used
             
-            # Extract final assignments, positions, and rotations
+            # Extract final assignments and positions
             assignments = [-1] * n
             positions = [(0, 0)] * n
-            rotations = [0] * n
             
             for i in range(n):
                 for b in range(max_bins):
                     if solver.Value(z[i,b]) == 1:
                         assignments[i] = b
                         positions[i] = (solver.Value(x[i,b]), solver.Value(y[i,b]))
-                        rotations[i] = solver.Value(rotate[i])
                         break
             
             best_assignments = assignments.copy()
             best_positions = positions.copy()
-            best_rotations = rotations.copy()
             
             # Save final checkpoint
             save_checkpoint(instance_id, best_bins)
@@ -473,7 +409,6 @@ def solve_bin_packing_with_rotation(W, H, rectangles, time_limit=600):
             'n_bins': bins_used,
             'assignments': best_assignments if best_assignments else assignments,
             'positions': best_positions if best_positions else positions,
-            'rotations': best_rotations if best_rotations else rotations,
             'optimal': status == cp_model.OPTIMAL,
             'solve_time': solve_time,
             'objective_value': solver.ObjectiveValue() if status == cp_model.OPTIMAL else bins_used,
@@ -485,15 +420,14 @@ def solve_bin_packing_with_rotation(W, H, rectangles, time_limit=600):
             'n_bins': best_bins if best_bins != float('inf') else upper_bound,
             'assignments': best_assignments,
             'positions': best_positions,
-            'rotations': best_rotations,
             'optimal': False,
             'solve_time': solve_time,
             'objective_value': None,
             'solutions_found': solution_callback.solution_count
         }
 
-def display_solution(W, H, rectangles, positions, assignments, rotations, instance_name):
-    """Display solution with one subplot per bin, showing rotations"""
+def display_solution(W, H, rectangles, positions, assignments, instance_name):
+    """Display solution with one subplot per bin"""
     n_bins = len(set(assignments))
     n_rectangles = len(rectangles)
     
@@ -502,7 +436,7 @@ def display_solution(W, H, rectangles, positions, assignments, rotations, instan
     nrows = math.ceil(n_bins / ncols)
     
     fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 4, nrows * 4))
-    fig.suptitle(f'Solution for {instance_name} - {n_bins} bins (with rotation)', fontsize=16)
+    fig.suptitle(f'Solution for {instance_name} - {n_bins} bins', fontsize=16)
     
     # Handle different subplot configurations
     if n_bins == 1:
@@ -529,15 +463,8 @@ def display_solution(W, H, rectangles, positions, assignments, rotations, instan
             
             # Draw each rectangle in this bin
             for item_idx in items:
-                orig_width, orig_height = rectangles[item_idx]
+                width, height = rectangles[item_idx]
                 x, y = positions[item_idx]
-                is_rotated = rotations[item_idx]
-                
-                # Apply rotation
-                if is_rotated:
-                    width, height = orig_height, orig_width
-                else:
-                    width, height = orig_width, orig_height
                 
                 rect = plt.Rectangle((x, y), width, height, 
                                    edgecolor='black', 
@@ -545,9 +472,8 @@ def display_solution(W, H, rectangles, positions, assignments, rotations, instan
                                    alpha=0.7)
                 ax.add_patch(rect)
                 
-                # Add item number and rotation info
-                rot_info = 'R' if is_rotated else 'NR'
-                ax.text(x + width/2, y + height/2, f'{item_idx + 1}\n{rot_info}', 
+                # Add item number
+                ax.text(x + width/2, y + height/2, str(item_idx + 1), 
                        ha='center', va='center', fontweight='bold')
             
             # Set grid and ticks
@@ -560,18 +486,18 @@ def display_solution(W, H, rectangles, positions, assignments, rotations, instan
         axes[j].axis('off')
     
     plt.tight_layout(rect=[0, 0, 1, 0.95])  # Adjust for suptitle
-    plt.savefig(f'OR-TOOLS_CP_R_SB/{instance_name}.png', dpi=150, bbox_inches='tight')
+    plt.savefig(f'OR-TOOLS_CP_C1/{instance_name}.png', dpi=150, bbox_inches='tight')
     plt.close()
 
 if __name__ == "__main__":
     # Controller mode
     if len(sys.argv) == 1:
         # Create output folder if it doesn't exist
-        if not os.path.exists('OR-TOOLS_CP_R_SB'):
-            os.makedirs('OR-TOOLS_CP_R_SB')
+        if not os.path.exists('OR-TOOLS_CP_C1'):
+            os.makedirs('OR-TOOLS_CP_C1')
         
         # Read existing Excel file to check completed instances
-        excel_file = 'OR-TOOLS_CP_R_SB.xlsx'
+        excel_file = 'OR-TOOLS_CP_C1.xlsx'
         if os.path.exists(excel_file):
             try:
                 existing_df = pd.read_excel(excel_file)
@@ -584,8 +510,8 @@ if __name__ == "__main__":
             completed_instances = []
         
         # Set timeout
-        TIMEOUT = 1800  # 10 minutes
-
+        TIMEOUT = 1800  
+        
         # Start from instance 1 (skip index 0 which is empty)
         for instance_id in range(1, len(instances)):
             instance_name = instances[instance_id]
@@ -600,12 +526,12 @@ if __name__ == "__main__":
             print(f"{'=' * 50}")
             
             # Clean up previous result files
-            for temp_file in [f'results_OR-TOOLS_CP_R_SB_{instance_id}.json', f'checkpoint_OR-TOOLS_CP_R_SB_{instance_id}.json']:
+            for temp_file in [f'results_OR-TOOLS_CP_C1_{instance_id}.json', f'checkpoint_OR-TOOLS_CP_C1_{instance_id}.json']:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
             
             # Run instance with runlim
-            command = f"./runlim -r {TIMEOUT} python3 OR-TOOLS_CP_R_SB.py {instance_id}"
+            command = f"./runlim -r {TIMEOUT} python3 OR-TOOLS_CP_C1.py {instance_id}"
             
             try:
                 process = subprocess.Popen(command, shell=True)
@@ -615,11 +541,11 @@ if __name__ == "__main__":
                 # Check results
                 result = None
                 
-                if os.path.exists(f'results_OR-TOOLS_CP_R_SB_{instance_id}.json'):
-                    with open(f'results_OR-TOOLS_CP_R_SB_{instance_id}.json', 'r') as f:
+                if os.path.exists(f'results_OR-TOOLS_CP_C1_{instance_id}.json'):
+                    with open(f'results_OR-TOOLS_CP_C1_{instance_id}.json', 'r') as f:
                         result = json.load(f)
-                elif os.path.exists(f'checkpoint_OR-TOOLS_CP_R_SB_{instance_id}.json'):
-                    with open(f'checkpoint_OR-TOOLS_CP_R_SB_{instance_id}.json', 'r') as f:
+                elif os.path.exists(f'checkpoint_OR-TOOLS_CP_C1_{instance_id}.json'):
+                    with open(f'checkpoint_OR-TOOLS_CP_C1_{instance_id}.json', 'r') as f:
                         result = json.load(f)
                     result['Status'] = 'TIMEOUT'
                     result['Instance'] = instance_name
@@ -657,7 +583,7 @@ if __name__ == "__main__":
                 print(f"Error running instance {instance_name}: {str(e)}")
             
             # Clean up temp files
-            for temp_file in [f'results_OR-TOOLS_CP_R_SB_{instance_id}.json', f'checkpoint_OR-TOOLS_CP_R_SB_{instance_id}.json']:
+            for temp_file in [f'results_OR-TOOLS_CP_C1_{instance_id}.json', f'checkpoint_OR-TOOLS_CP_C1_{instance_id}.json']:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
         
@@ -677,7 +603,6 @@ if __name__ == "__main__":
             best_bins = float('inf')
             best_assignments = []
             best_positions = []
-            best_rotations = []
             
             # Read input
             input_data = read_file_instance(instance_name)
@@ -695,16 +620,16 @@ if __name__ == "__main__":
                     rectangles.append((w, h))
             # Calculate bounds
             lower_bound = calculate_lower_bound(rectangles, W, H)
-            upper_bound = min(n_items, first_fit_upper_bound_with_rotation(rectangles, W, H))
+            upper_bound = min(n_items, first_fit_upper_bound(rectangles, W, H))
             
-            print(f"Solving 2D Bin Packing with OR-Tools CP and C1 symmetry breaking (with rotation) for instance {instance_name}")
+            print(f"Solving 2D Bin Packing with OR-Tools CP and C1 symmetry breaking for instance {instance_name}")
             print(f"Bin size: {W}x{H}")
             print(f"Number of items: {n_items}")
             print(f"Lower bound: {lower_bound}")
             print(f"Upper bound: {upper_bound}")
             
             # Solve with CP
-            result = solve_bin_packing_with_rotation(W, H, rectangles, time_limit=1800)
+            result = solve_bin_packing(W, H, rectangles, time_limit=1800)
             
             stop = timeit.default_timer()
             runtime = stop - start
@@ -712,7 +637,7 @@ if __name__ == "__main__":
             # Process result
             if len(result['positions']) > 0:
                 # Display solution
-                display_solution(W, H, rectangles, result['positions'], result['assignments'], result['rotations'], instance_name)
+                display_solution(W, H, rectangles, result['positions'], result['assignments'], instance_name)
                 
                 print(f"Solution found: {result['n_bins']} bins")
                 print(f"Solutions explored: {result['solutions_found']}")
@@ -733,10 +658,10 @@ if __name__ == "__main__":
             }
             
             # Save to Excel
-            excel_file = 'OR-TOOLS_CP_R_SB.xlsx'
+            excel_file = 'OR-TOOLS_CP_C1.xlsx'
             if os.path.exists(excel_file):
+                existing_df = pd.read_excel(excel_file)
                 try:
-                    existing_df = pd.read_excel(excel_file)
                     instance_exists = instance_name in existing_df['Instance'].tolist() if 'Instance' in existing_df.columns else False
                     
                     if instance_exists:
@@ -755,7 +680,7 @@ if __name__ == "__main__":
             print(f"Results saved to {excel_file}")
             
             # Save JSON result for controller
-            with open(f'results_OR-TOOLS_CP_R_SB_{instance_id}.json', 'w') as f:
+            with open(f'results_OR-TOOLS_CP_C1_{instance_id}.json', 'w') as f:
                 json.dump(result_data, f)
             
             print(f"Instance {instance_name} completed - Runtime: {runtime:.2f}s, Bins: {result['n_bins']}")
@@ -773,8 +698,9 @@ if __name__ == "__main__":
             }
             
             # Save error result to Excel
-            excel_file = 'OR-TOOLS_CP_R_SB.xlsx'
+            excel_file = 'OR-TOOLS_CP_C1.xlsx'
             if os.path.exists(excel_file):
+                try:
                     existing_df = pd.read_excel(excel_file)
                     instance_exists = instance_name in existing_df['Instance'].tolist() if 'Instance' in existing_df.columns else False
                     
@@ -785,11 +711,13 @@ if __name__ == "__main__":
                     else:
                         result_df = pd.DataFrame([result_data])
                         existing_df = pd.concat([existing_df, result_df], ignore_index=True)
+                except:
+                    existing_df = pd.DataFrame([result_data])
             else:
                 existing_df = pd.DataFrame([result_data])
             
             existing_df.to_excel(excel_file, index=False)
             print(f"Error results saved to {excel_file}")
             
-            with open(f'results_OR-TOOLS_CP_R_SB_{instance_id}.json', 'w') as f:
+            with open(f'results_OR-TOOLS_CP_C1_{instance_id}.json', 'w') as f:
                 json.dump(result_data, f)

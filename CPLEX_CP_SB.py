@@ -1,13 +1,14 @@
 """
-2D Bin Packing Problem - Non-Stacking Version with CP using OR-Tools
-Symmetry Breaking: C1 (Enhanced implementation)
+2D Bin Packing Problem - Non-Stacking Version with CP using CPLEX
+Symmetry Breaking: C1 (Bins are used in order)
 """
 
-from ortools.sat.python import cp_model
+from docplex.cp.model import CpoModel
 import matplotlib.pyplot as plt
 import numpy as np
 import time
 import math
+import pandas as pd
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 import timeit
@@ -17,7 +18,6 @@ import os
 import json
 import subprocess
 import traceback
-import pandas as pd
 
 # Global variables to track best solution found so far
 best_bins = float('inf')
@@ -40,7 +40,7 @@ def handle_interrupt(signum, frame):
         'Status': 'TIMEOUT'
     }
     
-    with open(f'results_OR-TOOLS_CP_C1_{instance_id}.json', 'w') as f:
+    with open(f'results_CPLEX_CP_C1_{instance_id}.json', 'w') as f:
         json.dump(result, f)
     
     sys.exit(0)
@@ -50,33 +50,36 @@ signal.signal(signal.SIGTERM, handle_interrupt)
 signal.signal(signal.SIGINT, handle_interrupt)
 
 # Create output folder if it doesn't exist
-if not os.path.exists('OR-TOOLS_CP_C1'):
-    os.makedirs('OR-TOOLS_CP_C1')
+if not os.path.exists('CPLEX_CP_C1'):
+    os.makedirs('CPLEX_CP_C1')
+
+
 def read_file_instance(instance_name):
     """Read instance file based on instance name"""
     s = ''
     
     # Determine file path based on instance name
+    if instance_name.startswith('BENG'):
+        filepath = f"inputs/BENG/{instance_name}.txt"
+    elif instance_name.startswith('CL_'):
+        filepath = f"inputs/CLASS/{instance_name}.txt"
+    else:
+        # For other instances, try different folders
+        possible_paths = [
+           f"inputs/set1/{instance_name}.txt",
+            f"inputs/set2/{instance_name}.txt",
+             f"inputs/set3/{instance_name}.txt",
+        ]
+        
+        filepath = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                filepath = path
+                break
+        
+        if filepath is None:
+            raise FileNotFoundError(f"Could not find instance file for {instance_name}")
     
-    # For other instances, try different folders
-    possible_paths = [
-        f"inputs/{instance_name}.txt",
-        f"inputs/BENG/{instance_name}.txt",
-        f"inputs/WANG/{instance_name}",
-        f"inputs/NGCUT/{instance_name}",
-        f"inputs/CGCUT/{instance_name}", 
-        f"inputs/HIFI1997_format/{instance_name}",
-        f"inputs/CHL_format/{instance_name}.txt",
-    ]
-    
-    filepath = None
-    for path in possible_paths:
-        if os.path.exists(path):
-            filepath = path
-            break
-    if filepath is None:
-        raise FileNotFoundError(f"Could not find instance file for {instance_name}")
-
     try:
         with open(filepath, 'r') as f:
             s = f.read()
@@ -85,26 +88,39 @@ def read_file_instance(instance_name):
     
     return s.splitlines()
 
-# Updated instance list with all 510 instances
-instances = [
+set1 = [
     "",
-    # BENG instances (10 instances)
-    "BENG01", "BENG02", "BENG03", "BENG04", "BENG05",
-    "BENG06", "BENG07", "BENG08", "BENG09", "BENG10",
-    # WANG instances (3 instances)
-    "WANG1", "WANG2", "WANG3",
-    # ngcut (12 instances)
-    "ngcut1", "ngcut2", "ngcut3", "ngcut4", "ngcut5", "ngcut6",
-    "ngcut7", "ngcut8", "ngcut9", "ngcut10", "ngcut11", "ngcut12",
-    # cgcut (3 instances)
-    "cgcut1", "cgcut2", "cgcut3",
-    # Hifi
-    "A1", "A2", "A3", "A4", "A5", "HH",
-    # CHL
-    "CHL1", "CHL2", "CHL3", "CHL4", "CHL5", "CHL6", "CHL7",
-    "Hchl1", "Hchl2", "Hchl3s", "Hchl4s", "Hchl5s", "Hchl6s",
-    "Hchl7s","Hchl8s", "Hchl9",
-     ]
+    "gcut1", "gcut2", "gcut3", "gcut4",
+    "gcut5", "gcut6", "gcut7", "gcut8", "gcut9",
+    "gcut10", "gcut11", "gcut12", "gcut13", "gcut14",
+    "gcut15", "gcut16", "gcut17"
+]
+
+# small set
+set2 = [
+    "",
+    "A1", "A2", "A3", "A4", "A5", 
+    "CHL1", "CHL2", "CHL5", "CHL6", "CHL7",
+    "CU1", "CU2",
+    "CW1", "CW2", "CW3",
+     "Hchl2", "Hchl3s", "Hchl4s", "Hchl5s", "Hchl6s",
+    "Hchl7s", "Hchl8s", "Hchl9",
+    "HH", "OF1", "OF2",
+    "STS2", "STS4", "W", "2", "3"
+    
+]
+
+
+set3 = [
+    "",
+    "ATP30", "ATP31", "ATP32", "ATP33", "ATP34",
+    "ATP35", "ATP36", "ATP37", "ATP38", "ATP39",
+    "ATP40", "ATP41", "ATP42", "ATP43", "ATP44",
+    "ATP45", "ATP46", "ATP47", "ATP48", "ATP49"
+]
+# Updated instance list with actual available instances
+instances = set2
+
 def first_fit_upper_bound(rectangles, W, H):
     """First-fit heuristic to get upper bound"""
     # Each bin is a list of placed rectangles: (x, y, w, h)
@@ -160,70 +176,26 @@ def save_checkpoint(instance_id, bins, status="IN_PROGRESS"):
         'Status': status
     }
     
-    with open(f'checkpoint_OR-TOOLS_CP_C1_{instance_id}.json', 'w') as f:
+    with open(f'checkpoint_CPLEX_CP_C1_{instance_id}.json', 'w') as f:
         json.dump(checkpoint, f)
 
-class SolutionCallback(cp_model.CpSolverSolutionCallback):
-    """Callback to track best solutions found during solving"""
-    
-    def __init__(self, u_vars, z_vars, x_vars, y_vars, n_items, max_bins):
-        cp_model.CpSolverSolutionCallback.__init__(self)
-        self.u_vars = u_vars
-        self.z_vars = z_vars
-        self.x_vars = x_vars
-        self.y_vars = y_vars
-        self.n_items = n_items
-        self.max_bins = max_bins
-        self.solution_count = 0
-        
-    def on_solution_callback(self):
-        global best_bins, best_assignments, best_positions
-        
-        self.solution_count += 1
-        
-        # Count bins used
-        bins_used = sum(1 for b in range(self.max_bins) if self.Value(self.u_vars[b]) == 1)
-        
-        # Update best solution if better
-        if bins_used < best_bins:
-            best_bins = bins_used
-            
-            # Extract assignments and positions
-            assignments = [-1] * self.n_items
-            positions = [(0, 0)] * self.n_items
-            
-            for i in range(self.n_items):
-                for b in range(self.max_bins):
-                    if self.Value(self.z_vars[i,b]) == 1:
-                        assignments[i] = b
-                        positions[i] = (self.Value(self.x_vars[i,b]), self.Value(self.y_vars[i,b]))
-                        break
-            
-            best_assignments = assignments.copy()
-            best_positions = positions.copy()
-            
-            # Save checkpoint with better solution
-            save_checkpoint(instance_id, best_bins)
-            
-            print(f"  New best solution found: {bins_used} bins (solution #{self.solution_count})")
-
-def solve_bin_packing(W, H, rectangles, time_limit=900):
+def solve_bin_packing(W, H, rectangles, time_limit=1800):
     """
-    Solves the 2D Bin Packing Problem using OR-Tools CP-SAT with objective minimization.
+    Solve 2D Bin Packing using CPLEX CP with C1 symmetry breaking and objective minimization
     
     Args:
         W: Width of each bin
         H: Height of each bin
-        rectangles: List of (width, height) tuples for each rectangle
-        time_limit: Time limit for the solver in seconds
+        rectangles: List of (width, height) tuples
+        time_limit: Time limit in seconds
         
     Returns:
-        dict with optimal number of bins, assignments and positions
+        Dictionary with solution or None if no solution found
     """
     global best_bins, best_assignments, best_positions, upper_bound
     
-    # Create the model
-    model = cp_model.CpModel()
+    # Create the CP model
+    model = CpoModel(name="2D_BinPacking_C1")
     
     n = len(rectangles)
     
@@ -232,183 +204,168 @@ def solve_bin_packing(W, H, rectangles, time_limit=900):
     upper_bound = ub
     max_bins = ub  # Use upper bound as maximum number of bins
     
-    print(f"Creating CP model with {n} items and up to {max_bins} bins...")
+    print(f"Creating CPLEX CP model with {n} items and up to {max_bins} bins...")
     start_model_time = time.time()
     
-    # Variables: coordinates of the bottom-left corner of each rectangle
+    # Variables: bin assignment and coordinates for each rectangle
+    bin_assignment = [model.integer_var(0, max_bins-1, f'bin_{i}') for i in range(n)]
     x = {}
     y = {}
-    z = {}  # z[i,b] = 1 if item i is assigned to bin b
     
     for i in range(n):
-        for b in range(max_bins):
-            x[i,b] = model.NewIntVar(0, W - rectangles[i][0], f'x_{i}_{b}')
-            y[i,b] = model.NewIntVar(0, H - rectangles[i][1], f'y_{i}_{b}')
-            z[i,b] = model.NewBoolVar(f'z_{i}_{b}')
+            x[i] = model.integer_var(0, W - rectangles[i][0], f'x_{i}_{b}')
+            y[i] = model.integer_var(0, H - rectangles[i][1], f'y_{i}_{b}')
     
     # Bin usage variables
-    u = {}  # u[b] = 1 if bin b is used
-    for b in range(max_bins):
-        u[b] = model.NewBoolVar(f'u_{b}')
+    bin_used = [model.binary_var(f'used_{b}') for b in range(max_bins)]
     
-    # Each item must be placed in exactly one bin
-    for i in range(n):
-        model.Add(sum(z[i,b] for b in range(max_bins)) == 1)
-    
-    # Bin usage constraints
+    # Link bin usage with assignments
     for b in range(max_bins):
-        for i in range(n):
-            model.Add(z[i,b] <= u[b])
+        model.add(model.if_then(
+            model.logical_or([bin_assignment[i] == b for i in range(n)]),
+            bin_used[b] == 1
+        ))
     
     # C1 Symmetry Breaking: Bins are used in order
     for b in range(1, max_bins):
-        model.Add(u[b] <= u[b-1])
+        model.add(bin_used[b-1] >= bin_used[b])
     
-    # Find largest rectangle by area for additional symmetry breaking
+    # Find largest rectangle for additional C1 symmetry breaking
     max_area_idx = 0
     max_area = rectangles[0][0] * rectangles[0][1]
+    
     for i in range(1, n):
         area = rectangles[i][0] * rectangles[i][1]
         if area > max_area:
             max_area = area
             max_area_idx = i
     
-    # C1 additional symmetry breaking: Place largest rectangle in first bin
+    # C1 Additional Symmetry Breaking: Place largest rectangle in first bin
     if n > 1:
-        model.Add(z[max_area_idx, 0] == 1)
+        model.add(bin_assignment[max_area_idx] == 0)
         
         # Position the largest rectangle in the bottom-left quadrant
-        model.Add(x[max_area_idx, 0] <= (W - rectangles[max_area_idx][0]) // 2)
-        model.Add(y[max_area_idx, 0] <= (H - rectangles[max_area_idx][1]) // 2)
+        model.add(x[max_area_idx, 0] <= (W - rectangles[max_area_idx][0]) // 2)
+        model.add(y[max_area_idx, 0] <= (H - rectangles[max_area_idx][1]) // 2)
     
-    # Non-overlapping constraints within each bin
-    for b in range(max_bins):
-        for i in range(n):
-            for j in range(i + 1, n):
-                # Define Boolean variables for the four possible arrangements
-                b_left_i_j = model.NewBoolVar(f'b_left_{i}_{j}_{b}')
-                b_left_j_i = model.NewBoolVar(f'b_left_{j}_{i}_{b}')
-                b_below_i_j = model.NewBoolVar(f'b_below_{i}_{j}_{b}')
-                b_below_j_i = model.NewBoolVar(f'b_below_{j}_{i}_{b}')
-                
-                # Position constraints
-                model.Add(x[i,b] + rectangles[i][0] <= x[j,b]).OnlyEnforceIf(b_left_i_j)
-                model.Add(x[j,b] + rectangles[j][0] <= x[i,b]).OnlyEnforceIf(b_left_j_i)
-                model.Add(y[i,b] + rectangles[i][1] <= y[j,b]).OnlyEnforceIf(b_below_i_j)
-                model.Add(y[j,b] + rectangles[j][1] <= y[i,b]).OnlyEnforceIf(b_below_j_i)
-                
-                # If both items are in this bin, they must not overlap
-                both_in_bin = model.NewBoolVar(f'both_in_bin_{i}_{j}_{b}')
-                model.Add(z[i,b] + z[j,b] == 2).OnlyEnforceIf(both_in_bin)
-                model.Add(z[i,b] + z[j,b] <= 1).OnlyEnforceIf(both_in_bin.Not())
-                
-                # When both items are in the same bin, at least one arrangement must be true
-                model.Add(b_left_i_j + b_left_j_i + b_below_i_j + b_below_j_i >= 1).OnlyEnforceIf(both_in_bin)
+    # Non-overlapping constraints for rectangles in the same bin
+    for i in range(n):
+        for j in range(i+1, n):
+            for b in range(max_bins):
+                # If both rectangles are in bin b, they must not overlap
+                model.add(model.logical_or([
+                    bin_assignment[i] != b,
+                    bin_assignment[j] != b,
+                    x[i, b] + rectangles[i][0] <= x[j, b],  # i is to the left of j
+                    x[j, b] + rectangles[j][0] <= x[i, b],  # j is to the left of i
+                    y[i, b] + rectangles[i][1] <= y[j, b],  # i is below j
+                    y[j, b] + rectangles[j][1] <= y[i, b]   # j is below i
+                ]))
                 
                 # C1 Symmetry Breaking - Large rectangles
                 if rectangles[i][0] + rectangles[j][0] > W:
-                    # If two rectangles can't fit side by side, they must be stacked vertically
-                    model.Add(b_left_i_j == 0).OnlyEnforceIf(both_in_bin)
-                    model.Add(b_left_j_i == 0).OnlyEnforceIf(both_in_bin)
+                    # If two rectangles can't fit side by side, disable horizontal placements
+                    model.add(model.logical_or([
+                        bin_assignment[i] != b,
+                        bin_assignment[j] != b,
+                        y[i, b] + rectangles[i][1] <= y[j, b],  # i is below j
+                        y[j, b] + rectangles[j][1] <= y[i, b]   # j is below i
+                    ]))
                 
                 if rectangles[i][1] + rectangles[j][1] > H:
-                    # If two rectangles can't fit vertically, they must be placed side by side
-                    model.Add(b_below_i_j == 0).OnlyEnforceIf(both_in_bin)
-                    model.Add(b_below_j_i == 0).OnlyEnforceIf(both_in_bin)
+                    # If two rectangles can't fit vertically, disable vertical placements
+                    model.add(model.logical_or([
+                        bin_assignment[i] != b,
+                        bin_assignment[j] != b,
+                        x[i, b] + rectangles[i][0] <= x[j, b],  # i is to the left of j
+                        x[j, b] + rectangles[j][0] <= x[i, b]   # j is to the left of i
+                    ]))
     
-    # Same-sized rectangles C1 constraint
+    # C1 Symmetry Breaking - For identical rectangles, enforce ordering
     for i in range(n):
         for j in range(i+1, n):
             if rectangles[i][0] == rectangles[j][0] and rectangles[i][1] == rectangles[j][1]:
-                # For identical rectangles, apply ordering: i must come before j
-                for b in range(max_bins):
-                    for b2 in range(b):
-                        # If i is in bin b and j is in bin b2, then b < b2 is invalid
-                        model.Add(z[i,b] + z[j,b2] <= 1)
+                # If rectangles are identical, enforce bin ordering
+                model.add(bin_assignment[i] <= bin_assignment[j])
                 
-                # If both in same bin, impose ordering (lexicographic)
+                # If in same bin, enforce positional ordering (lexicographic)
                 for b in range(max_bins):
-                    both_in_bin = model.NewBoolVar(f'same_both_in_bin_{i}_{j}_{b}')
-                    model.Add(z[i,b] + z[j,b] == 2).OnlyEnforceIf(both_in_bin)
-                    model.Add(z[i,b] + z[j,b] <= 1).OnlyEnforceIf(both_in_bin.Not())
-                    
-                    # i must be to the left of j, or at same x and i below j
-                    left_ordering = model.NewBoolVar(f'left_ordering_{i}_{j}_{b}')
-                    model.Add(x[i,b] < x[j,b]).OnlyEnforceIf([both_in_bin, left_ordering])
-                    
-                    same_x = model.NewBoolVar(f'same_x_{i}_{j}_{b}')
-                    model.Add(x[i,b] == x[j,b]).OnlyEnforceIf([both_in_bin, same_x, left_ordering.Not()])
-                    model.Add(y[i,b] <= y[j,b]).OnlyEnforceIf([both_in_bin, same_x, left_ordering.Not()])
+                    model.add(model.logical_or([
+                        bin_assignment[i] != b,
+                        bin_assignment[j] != b,
+                        x[i, b] < x[j, b],  # i is strictly to the left of j
+                        model.logical_and([x[i, b] == x[j, b], y[i, b] <= y[j, b]])  # or same x but i is at or below j
+                    ]))
     
-    # Set objective: minimize number of bins used
-    model.Minimize(sum(u[b] for b in range(max_bins)))
+    # Set objective: minimize the number of bins used
+    model.add(model.minimize(model.sum(bin_used)))
     
     print(f"Model created in {time.time() - start_model_time:.2f}s")
     
     # Save checkpoint before solving
     save_checkpoint(instance_id, best_bins if best_bins != float('inf') else upper_bound)
     
-    # Create callback to track solutions
-    solution_callback = SolutionCallback(u, z, x, y, n, max_bins)
-    
-    # Solve with CP-SAT
-    solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = time_limit
-    solver.parameters.num_search_workers = 1
-    solver.parameters.enumerate_all_solutions = False  # We want the optimal solution
-    
-    print("Solving with CP-SAT...")
+    # Solve with time limit
+    print("Solving with CPLEX CP...")
     solve_start = time.time()
-    status = solver.SolveWithSolutionCallback(model, solution_callback)
-    solve_time = time.time() - solve_start
     
-    print(f"Solver finished in {solve_time:.2f}s with status: {solver.StatusName(status)}")
-    print(f"Solutions found: {solution_callback.solution_count}")
-    
-    if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-        # Get final solution
-        bins_used = sum(1 for b in range(max_bins) if solver.Value(u[b]) == 1)
+    try:
+        solution = model.solve(TimeLimit=time_limit, LogVerbosity='Quiet')
+        solve_time = time.time() - solve_start
+        print(f"Solver finished in {solve_time:.2f}s")
         
-        # Update best solution if this is better
-        if bins_used < best_bins:
-            best_bins = bins_used
-            
-            # Extract final assignments and positions
-            assignments = [-1] * n
-            positions = [(0, 0)] * n
-            
-            for i in range(n):
-                for b in range(max_bins):
-                    if solver.Value(z[i,b]) == 1:
-                        assignments[i] = b
-                        positions[i] = (solver.Value(x[i,b]), solver.Value(y[i,b]))
-                        break
-            
-            best_assignments = assignments.copy()
-            best_positions = positions.copy()
-            
-            # Save final checkpoint
-            save_checkpoint(instance_id, best_bins)
+    except Exception as e:
+        solve_time = time.time() - solve_start
+        print(f"Solver error: {str(e)}")
+        print(f"Solver interrupted after {solve_time:.2f}s")
         
+        # Return current best solution on error
         return {
-            'n_bins': bins_used,
-            'assignments': best_assignments if best_assignments else assignments,
-            'positions': best_positions if best_positions else positions,
-            'optimal': status == cp_model.OPTIMAL,
-            'solve_time': solve_time,
-            'objective_value': solver.ObjectiveValue() if status == cp_model.OPTIMAL else bins_used,
-            'solutions_found': solution_callback.solution_count
-        }
-    else:
-        # No solution found, return the upper bound
-        return {
+            'status': 'ERROR',
             'n_bins': best_bins if best_bins != float('inf') else upper_bound,
             'assignments': best_assignments,
             'positions': best_positions,
-            'optimal': False,
             'solve_time': solve_time,
-            'objective_value': None,
-            'solutions_found': solution_callback.solution_count
+            'objective_value': best_bins if best_bins != float('inf') else upper_bound
+        }
+    
+    if solution and solution.is_solution():
+        # Extract solution
+        used_bins = sum(1 for b in range(max_bins) if solution.get_value(bin_used[b]) > 0.5)
+        assignments = [solution.get_value(bin_assignment[i]) for i in range(n)]
+        
+        positions = []
+        for i in range(n):
+            b = assignments[i]
+            positions.append((solution.get_value(x[i, b]), solution.get_value(y[i, b])))
+        
+        # Update global best solution
+        best_bins = used_bins
+        best_assignments = assignments.copy()
+        best_positions = positions.copy()
+        
+        # Save final checkpoint
+        save_checkpoint(instance_id, best_bins)
+        
+        print(f"Solution found: {used_bins} bins")
+        
+        return {
+            'status': 'OPTIMAL' if solution.get_solve_status() == 'Optimal' else 'FEASIBLE',
+            'n_bins': used_bins,
+            'assignments': assignments,
+            'positions': positions,
+            'solve_time': solution.get_solve_time(),
+            'objective_value': used_bins
+        }
+    else:
+        print("No solution found")
+        return {
+            'status': 'NO_SOLUTION',
+            'n_bins': best_bins if best_bins != float('inf') else upper_bound,
+            'assignments': best_assignments,
+            'positions': best_positions,
+            'solve_time': solve_time,
+            'objective_value': None
         }
 
 def display_solution(W, H, rectangles, positions, assignments, instance_name):
@@ -471,23 +428,24 @@ def display_solution(W, H, rectangles, positions, assignments, instance_name):
         axes[j].axis('off')
     
     plt.tight_layout(rect=[0, 0, 1, 0.95])  # Adjust for suptitle
-    plt.savefig(f'OR-TOOLS_CP_C1/{instance_name}.png', dpi=150, bbox_inches='tight')
+    plt.savefig(f'CPLEX_CP_C1/{instance_name}.png', dpi=150, bbox_inches='tight')
     plt.close()
 
 if __name__ == "__main__":
     # Controller mode
     if len(sys.argv) == 1:
         # Create output folder if it doesn't exist
-        if not os.path.exists('OR-TOOLS_CP_C1'):
-            os.makedirs('OR-TOOLS_CP_C1')
+        if not os.path.exists('CPLEX_CP_C1'):
+            os.makedirs('CPLEX_CP_C1')
         
         # Read existing Excel file to check completed instances
-        excel_file = 'OR-TOOLS_CP_C1.xlsx'
+        excel_file = 'CPLEX_CP_C1.xlsx'
         if os.path.exists(excel_file):
             try:
                 existing_df = pd.read_excel(excel_file)
                 completed_instances = existing_df['Instance'].tolist() if 'Instance' in existing_df.columns else []
-            except:
+            except Exception as e:
+                print(f"Error reading Excel file: {e}. Starting with empty DataFrame.")
                 existing_df = pd.DataFrame()
                 completed_instances = []
         else:
@@ -495,7 +453,7 @@ if __name__ == "__main__":
             completed_instances = []
         
         # Set timeout
-        TIMEOUT = 900  
+        TIMEOUT = 1800  
         
         # Start from instance 1 (skip index 0 which is empty)
         for instance_id in range(1, len(instances)):
@@ -511,12 +469,12 @@ if __name__ == "__main__":
             print(f"{'=' * 50}")
             
             # Clean up previous result files
-            for temp_file in [f'results_OR-TOOLS_CP_C1_{instance_id}.json', f'checkpoint_OR-TOOLS_CP_C1_{instance_id}.json']:
+            for temp_file in [f'results_CPLEX_CP_C1_{instance_id}.json', f'checkpoint_CPLEX_CP_C1_{instance_id}.json']:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
             
             # Run instance with runlim
-            command = f"./runlim -r {TIMEOUT} python3 OR-TOOLS_CP_C1.py {instance_id}"
+            command = f"./runlim -r {TIMEOUT} python3 CPLEX_CP_C1.py {instance_id}"
             
             try:
                 process = subprocess.Popen(command, shell=True)
@@ -526,11 +484,11 @@ if __name__ == "__main__":
                 # Check results
                 result = None
                 
-                if os.path.exists(f'results_OR-TOOLS_CP_C1_{instance_id}.json'):
-                    with open(f'results_OR-TOOLS_CP_C1_{instance_id}.json', 'r') as f:
+                if os.path.exists(f'results_CPLEX_CP_C1_{instance_id}.json'):
+                    with open(f'results_CPLEX_CP_C1_{instance_id}.json', 'r') as f:
                         result = json.load(f)
-                elif os.path.exists(f'checkpoint_OR-TOOLS_CP_C1_{instance_id}.json'):
-                    with open(f'checkpoint_OR-TOOLS_CP_C1_{instance_id}.json', 'r') as f:
+                elif os.path.exists(f'checkpoint_CPLEX_CP_C1_{instance_id}.json'):
+                    with open(f'checkpoint_CPLEX_CP_C1_{instance_id}.json', 'r') as f:
                         result = json.load(f)
                     result['Status'] = 'TIMEOUT'
                     result['Instance'] = instance_name
@@ -554,7 +512,8 @@ if __name__ == "__main__":
                             else:
                                 result_df = pd.DataFrame([result])
                                 existing_df = pd.concat([existing_df, result_df], ignore_index=True)
-                        except:
+                        except Exception as e:
+                            print(f"Error reading Excel file: {e}. Creating new DataFrame.")
                             existing_df = pd.DataFrame([result])
                     else:
                         existing_df = pd.DataFrame([result])
@@ -568,7 +527,7 @@ if __name__ == "__main__":
                 print(f"Error running instance {instance_name}: {str(e)}")
             
             # Clean up temp files
-            for temp_file in [f'results_OR-TOOLS_CP_C1_{instance_id}.json', f'checkpoint_OR-TOOLS_CP_C1_{instance_id}.json']:
+            for temp_file in [f'results_CPLEX_CP_C1_{instance_id}.json', f'checkpoint_CPLEX_CP_C1_{instance_id}.json']:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
         
@@ -598,35 +557,47 @@ if __name__ == "__main__":
             rectangles = []
             for i in range(2, 2 + n_items):
                 line = input_data[i].split()
-                demand = int(line[2])
-                for _ in range(demand):
-                    w = int(line[0])
-                    h = int(line[1])
+                w = int(line[0])
+                h = int(line[1])
+                d = int(line[2])
+                for _ in range(d):
                     rectangles.append((w, h))
+            
             # Calculate bounds
             lower_bound = calculate_lower_bound(rectangles, W, H)
             upper_bound = min(n_items, first_fit_upper_bound(rectangles, W, H))
             
-            print(f"Solving 2D Bin Packing with OR-Tools CP and C1 symmetry breaking for instance {instance_name}")
+            print(f"Solving 2D Bin Packing with CPLEX CP and C1 symmetry breaking for instance {instance_name}")
             print(f"Bin size: {W}x{H}")
             print(f"Number of items: {n_items}")
             print(f"Lower bound: {lower_bound}")
             print(f"Upper bound: {upper_bound}")
             
             # Solve with CP
-            result = solve_bin_packing(W, H, rectangles, time_limit=900)
+            try:
+                result = solve_bin_packing(W, H, rectangles, time_limit=1800)
+            except Exception as e:
+                print(f"Error in instance {instance_name}: {str(e)}")
+                # Create error result
+                result = {
+                    'status': 'ERROR',
+                    'n_bins': upper_bound,
+                    'assignments': [],
+                    'positions': [],
+                    'solve_time': 0,
+                    'objective_value': upper_bound
+                }
             
             stop = timeit.default_timer()
             runtime = stop - start
             
             # Process result
-            if len(result['positions']) > 0:
+            if result and len(result['positions']) > 0:
                 # Display solution
                 display_solution(W, H, rectangles, result['positions'], result['assignments'], instance_name)
                 
                 print(f"Solution found: {result['n_bins']} bins")
-                print(f"Solutions explored: {result['solutions_found']}")
-                status = 'OPTIMAL' if result['optimal'] else 'FEASIBLE'
+                status = result['status']
                 
                 if result['objective_value'] is not None:
                     print(f"Objective value: {result['objective_value']}")
@@ -638,12 +609,12 @@ if __name__ == "__main__":
             result_data = {
                 'Instance': instance_name,
                 'Runtime': runtime,
-                'N_Bins': result['n_bins'],
-                'Status': status
+                'N_Bins': result['n_bins'] if result else (best_bins if best_bins != float('inf') else upper_bound),
+                'Status': status if result else 'ERROR'
             }
             
             # Save to Excel
-            excel_file = 'OR-TOOLS_CP_C1.xlsx'
+            excel_file = 'CPLEX_CP_C1.xlsx'
             if os.path.exists(excel_file):
                 try:
                     existing_df = pd.read_excel(excel_file)
@@ -656,7 +627,8 @@ if __name__ == "__main__":
                     else:
                         result_df = pd.DataFrame([result_data])
                         existing_df = pd.concat([existing_df, result_df], ignore_index=True)
-                except:
+                except Exception as e:
+                    print(f"Error reading Excel file: {e}. Creating new DataFrame.")
                     existing_df = pd.DataFrame([result_data])
             else:
                 existing_df = pd.DataFrame([result_data])
@@ -665,10 +637,10 @@ if __name__ == "__main__":
             print(f"Results saved to {excel_file}")
             
             # Save JSON result for controller
-            with open(f'results_OR-TOOLS_CP_C1_{instance_id}.json', 'w') as f:
+            with open(f'results_CPLEX_CP_C1_{instance_id}.json', 'w') as f:
                 json.dump(result_data, f)
             
-            print(f"Instance {instance_name} completed - Runtime: {runtime:.2f}s, Bins: {result['n_bins']}")
+            print(f"Instance {instance_name} completed - Runtime: {runtime:.2f}s, Bins: {result_data['N_Bins']}")
 
         except Exception as e:
             print(f"Error in instance {instance_name}: {str(e)}")
@@ -683,7 +655,7 @@ if __name__ == "__main__":
             }
             
             # Save error result to Excel
-            excel_file = 'OR-TOOLS_CP_C1.xlsx'
+            excel_file = 'CPLEX_CP_C1.xlsx'
             if os.path.exists(excel_file):
                 try:
                     existing_df = pd.read_excel(excel_file)
@@ -696,7 +668,8 @@ if __name__ == "__main__":
                     else:
                         result_df = pd.DataFrame([result_data])
                         existing_df = pd.concat([existing_df, result_df], ignore_index=True)
-                except:
+                except Exception as e:
+                    print(f"Error reading Excel file: {e}. Creating new DataFrame.")
                     existing_df = pd.DataFrame([result_data])
             else:
                 existing_df = pd.DataFrame([result_data])
@@ -704,5 +677,5 @@ if __name__ == "__main__":
             existing_df.to_excel(excel_file, index=False)
             print(f"Error results saved to {excel_file}")
             
-            with open(f'results_OR-TOOLS_CP_C1_{instance_id}.json', 'w') as f:
+            with open(f'results_CPLEX_CP_C1_{instance_id}.json', 'w') as f:
                 json.dump(result_data, f)

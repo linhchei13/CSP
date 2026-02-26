@@ -1,9 +1,9 @@
 """
-2D Bin Packing Problem - Non-Stacking Version with MIP using Gurobi
+2D Bin Packing Problem - Non-Stacking Version with MIP using CPLEX
 Symmetry Breaking: C1 (Enhanced implementation)
 """
 
-from gurobipy import Model, GRB, quicksum
+from docplex.mp.model import Model
 import matplotlib.pyplot as plt
 import numpy as np
 import time
@@ -40,7 +40,7 @@ def handle_interrupt(signum, frame):
         'Status': 'TIMEOUT'
     }
     
-    with open(f'results_GUROBI_MIP_C1_{instance_id}.json', 'w') as f:
+    with open(f'results_CPLEX_MIP_C1_{instance_id}.json', 'w') as f:
         json.dump(result, f)
     
     sys.exit(0)
@@ -50,9 +50,77 @@ signal.signal(signal.SIGTERM, handle_interrupt)
 signal.signal(signal.SIGINT, handle_interrupt)
 
 # Create output folder if it doesn't exist
-if not os.path.exists('GUROBI_MIP_C1'):
-    os.makedirs('GUROBI_MIP_C1')
+if not os.path.exists('CPLEX_MIP_C1'):
+    os.makedirs('CPLEX_MIP_C1')
 
+
+
+def read_file_instance(instance_name):
+    """Read instance file based on instance name"""
+    s = ''
+    
+    # Determine file path based on instance name
+    if instance_name.startswith('BENG'):
+        filepath = f"inputs/BENG/{instance_name}.txt"
+    elif instance_name.startswith('CL_'):
+        filepath = f"inputs/CLASS/{instance_name}.txt"
+    else:
+        # For other instances, try different folders
+        possible_paths = [
+           f"inputs/set1/{instance_name}.txt",
+            f"inputs/set2/{instance_name}.txt",
+             f"inputs/set3/{instance_name}.txt",
+        ]
+        
+        filepath = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                filepath = path
+                break
+        
+        if filepath is None:
+            raise FileNotFoundError(f"Could not find instance file for {instance_name}")
+    
+    try:
+        with open(filepath, 'r') as f:
+            s = f.read()
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Instance file not found: {filepath}")
+    
+    return s.splitlines()
+
+set1 = [
+    "",
+    "gcut1", "gcut2", "gcut3", "gcut4",
+    "gcut5", "gcut6", "gcut7", "gcut8", "gcut9",
+    "gcut10", "gcut11", "gcut12", "gcut13", "gcut14",
+    "gcut15", "gcut16", "gcut17"
+]
+
+# small set
+set2 = [
+    "",
+    "A1", "A2", "A3", "A4", "A5", 
+    "CHL1", "CHL2", "CHL5", "CHL6", "CHL7",
+    "CU1", "CU2",
+    "CW1", "CW2", "CW3",
+     "Hchl2", "Hchl3s", "Hchl4s", "Hchl5s", "Hchl6s",
+    "Hchl7s", "Hchl8s", "Hchl9",
+    "HH", "OF1", "OF2",
+    "STS2", "STS4", "W", "2", "3"
+    
+]
+
+
+set3 = [
+    "",
+    "ATP30", "ATP31", "ATP32", "ATP33", "ATP34",
+    "ATP35", "ATP36", "ATP37", "ATP38", "ATP39",
+    "ATP40", "ATP41", "ATP42", "ATP43", "ATP44",
+    "ATP45", "ATP46", "ATP47", "ATP48", "ATP49"
+]
+# Updated instance list with actual available instances
+instances = set2
 
 def first_fit_upper_bound(rectangles, W, H):
     """First-fit heuristic to get upper bound"""
@@ -95,60 +163,6 @@ def first_fit_upper_bound(rectangles, W, H):
     
     return len(bins)
 
-def read_file_instance(instance_name):
-    """Read instance file based on instance name"""
-    s = ''
-    
-    # Determine file path based on instance name
-    
-    # For other instances, try different folders
-    possible_paths = [
-        f"inputs/{instance_name}.txt",
-        f"inputs/BENG/{instance_name}.txt",
-        f"inputs/WANG/{instance_name}",
-        f"inputs/NGCUT/{instance_name}",
-        f"inputs/CGCUT/{instance_name}", 
-        f"inputs/HIFI1997_format/{instance_name}",
-        f"inputs/CHL_format/{instance_name}.txt",
-    ]
-    
-    filepath = None
-    for path in possible_paths:
-        if os.path.exists(path):
-            filepath = path
-            break
-    if filepath is None:
-        raise FileNotFoundError(f"Could not find instance file for {instance_name}")
-
-    try:
-        with open(filepath, 'r') as f:
-            s = f.read()
-    except FileNotFoundError:
-        raise FileNotFoundError(f"Instance file not found: {filepath}")
-    
-    return s.splitlines()
-
-# Updated instance list with all 510 instances
-instances = [
-    "",
-    # BENG instances (10 instances)
-    "BENG01", "BENG02", "BENG03", "BENG04", "BENG05",
-    "BENG06", "BENG07", "BENG08", "BENG09", "BENG10",
-    # WANG instances (3 instances)
-    "WANG1", "WANG2", "WANG3",
-    # ngcut (12 instances)
-    "ngcut1", "ngcut2", "ngcut3", "ngcut4", "ngcut5", "ngcut6",
-    "ngcut7", "ngcut8", "ngcut9", "ngcut10", "ngcut11", "ngcut12",
-    # cgcut (3 instances)
-    "cgcut1", "cgcut2", "cgcut3",
-    # Hifi
-    "A1", "A2", "A3", "A4", "A5", "HH",
-    # CHL
-    "CHL1", "CHL2", "CHL3", "CHL4", "CHL5", "CHL6", "CHL7",
-    "Hchl1", "Hchl2", "Hchl3s", "Hchl4s", "Hchl5s", "Hchl6s",
-    "Hchl7s","Hchl8s", "Hchl9",
-     ]
-
 def calculate_lower_bound(rectangles, W, H):
     """Calculate lower bound for number of bins needed"""
     total_area = sum(w * h for w, h in rectangles)
@@ -158,13 +172,12 @@ def calculate_lower_bound(rectangles, W, H):
 def save_checkpoint(instance_id, bins, status="IN_PROGRESS"):
     """Save checkpoint for current progress"""
     checkpoint = {
-        'Instance': instances[instance_id],
         'Runtime': timeit.default_timer() - start,
         'N_Bins': bins if bins != float('inf') else upper_bound,
         'Status': status
     }
     
-    with open(f'checkpoint_GUROBI_MIP_C1_{instance_id}.json', 'w') as f:
+    with open(f'checkpoint_CPLEX_MIP_C1_{instance_id}.json', 'w') as f:
         json.dump(checkpoint, f)
 
 def display_solution(W, H, rectangles, positions, assignments, instance_name):
@@ -227,12 +240,12 @@ def display_solution(W, H, rectangles, positions, assignments, instance_name):
         axes[j].axis('off')
     
     plt.tight_layout(rect=[0, 0, 1, 0.95])  # Adjust for suptitle
-    plt.savefig(f'GUROBI_MIP_C1/{instance_name}.png', dpi=150, bbox_inches='tight')
+    plt.savefig(f'CPLEX_MIP_C1/{instance_name}.png', dpi=150, bbox_inches='tight')
     plt.close()
 
-def solve_bin_packing(W, H, rectangles, lower_bound, upper_bound, time_limit=900):
+def solve_bin_packing(W, H, rectangles, lower_bound, upper_bound, time_limit=1800):
     """
-    Solve 2D Bin Packing using Gurobi MIP with C1 symmetry breaking
+    Solve 2D Bin Packing using CPLEX MIP with C1 symmetry breaking
     
     Args:
         W: Width of each bin
@@ -248,9 +261,7 @@ def solve_bin_packing(W, H, rectangles, lower_bound, upper_bound, time_limit=900
     global best_bins, best_assignments, best_positions
     
     # Create the model
-    mdl = Model("2D_BinPacking_C1")
-    mdl.setParam('OutputFlag', 1)  # Enable Gurobi output logs
-    mdl.setParam('TimeLimit', time_limit)  # Set time limit
+    mdl = Model(name="2D_BinPacking_C1")
     
     n = len(rectangles)
     max_bins = min(n, upper_bound)  # No need for more bins than items
@@ -264,19 +275,19 @@ def solve_bin_packing(W, H, rectangles, lower_bound, upper_bound, time_limit=900
     y = {}  # y[i,b] = y-position of item i in bin b
     for i in range(n):
         for b in range(max_bins):
-            x[i,b] = mdl.addVar(lb=0, ub=W - rectangles[i][0], vtype=GRB.INTEGER, name=f'x_{i}_{b}')
-            y[i,b] = mdl.addVar(lb=0, ub=H - rectangles[i][1], vtype=GRB.INTEGER, name=f'y_{i}_{b}')
+            x[i,b] = mdl.integer_var(lb=0, ub=W - rectangles[i][0], name=f'x_{i}_{b}')
+            y[i,b] = mdl.integer_var(lb=0, ub=H - rectangles[i][1], name=f'y_{i}_{b}')
     
     # 2. Assignment variables
     z = {}  # z[i,b] = 1 if item i is assigned to bin b
     for i in range(n):
         for b in range(max_bins):
-            z[i,b] = mdl.addVar(vtype=GRB.BINARY, name=f'z_{i}_{b}')
+            z[i,b] = mdl.binary_var(name=f'z_{i}_{b}')
     
     # 3. Bin usage variables
     u = {}  # u[b] = 1 if bin b is used
     for b in range(max_bins):
-        u[b] = mdl.addVar(vtype=GRB.BINARY, name=f'u_{b}')
+        u[b] = mdl.binary_var(name=f'u_{b}')
     
     # 4. Auxiliary variables for non-overlapping constraints
     left = {}   # left[i,j,b] = 1 if item i is to the left of item j in bin b
@@ -287,25 +298,31 @@ def solve_bin_packing(W, H, rectangles, lower_bound, upper_bound, time_limit=900
     for i in range(n):
         for j in range(i+1, n):
             for b in range(max_bins):
-                left[i,j,b] = mdl.addVar(vtype=GRB.BINARY, name=f'left_{i}_{j}_{b}')
-                right[i,j,b] = mdl.addVar(vtype=GRB.BINARY, name=f'right_{i}_{j}_{b}')
-                below[i,j,b] = mdl.addVar(vtype=GRB.BINARY, name=f'below_{i}_{j}_{b}')
-                above[i,j,b] = mdl.addVar(vtype=GRB.BINARY, name=f'above_{i}_{j}_{b}')
+                left[i,j,b] = mdl.binary_var(name=f'left_{i}_{j}_{b}')
+                right[i,j,b] = mdl.binary_var(name=f'right_{i}_{j}_{b}')
+                below[i,j,b] = mdl.binary_var(name=f'below_{i}_{j}_{b}')
+                above[i,j,b] = mdl.binary_var(name=f'above_{i}_{j}_{b}')
+    
+    # Keep track of constraint count
+    constraint_count = 0
     
     # Constraints
     
     # 1. Each item must be placed in exactly one bin
     for i in range(n):
-        mdl.addConstr(quicksum(z[i,b] for b in range(max_bins)) == 1, f"assign_{i}")
+        mdl.add_constraint(mdl.sum(z[i,b] for b in range(max_bins)) == 1)
+        constraint_count += 1
     
     # 2. Bin usage constraints - if an item is in bin b, bin b must be used
     for b in range(max_bins):
         for i in range(n):
-            mdl.addConstr(z[i,b] <= u[b], f"usage_{b}_{i}")
+            mdl.add_constraint(z[i,b] <= u[b])
+            constraint_count += 1
     
     # 3. C1 Symmetry Breaking: Bins are used in order
     for b in range(1, max_bins):
-        mdl.addConstr(u[b] <= u[b-1], f"order_{b}")
+        mdl.add_constraint(u[b] <= u[b-1])
+        constraint_count += 1
     
     # Find largest rectangle by area for additional symmetry breaking
     max_area_idx = 0
@@ -319,11 +336,13 @@ def solve_bin_packing(W, H, rectangles, lower_bound, upper_bound, time_limit=900
     
     # 4. C1 additional symmetry breaking: Place largest rectangle in first bin
     if n > 1:
-        mdl.addConstr(z[max_area_idx, 0] == 1, "largest_first")
+        mdl.add_constraint(z[max_area_idx, 0] == 1)
+        constraint_count += 1
         
         # Position the largest rectangle in the bottom-left quadrant
-        mdl.addConstr(x[max_area_idx, 0] <= (W - rectangles[max_area_idx][0]) // 2, "largest_x")
-        mdl.addConstr(y[max_area_idx, 0] <= (H - rectangles[max_area_idx][1]) // 2, "largest_y")
+        mdl.add_constraint(x[max_area_idx, 0] <= (W - rectangles[max_area_idx][0]) // 2)
+        mdl.add_constraint(y[max_area_idx, 0] <= (H - rectangles[max_area_idx][1]) // 2)
+        constraint_count += 2
     
     # 5. Non-overlapping constraints - Fixed version
     for i in range(n):
@@ -333,21 +352,23 @@ def solve_bin_packing(W, H, rectangles, lower_bound, upper_bound, time_limit=900
                 M = max(W, H)  # Big-M value
                 
                 # At least one separation must be true if both items are in bin b
-                mdl.addConstr(left[i,j,b] + right[i,j,b] + below[i,j,b] + above[i,j,b] >= 
-                              z[i,b] + z[j,b] - 1, f"overlap_{i}_{j}_{b}")
+                mdl.add_constraint(left[i,j,b] + right[i,j,b] + below[i,j,b] + above[i,j,b] >= 
+                                  z[i,b] + z[j,b] - 1)
+                constraint_count += 1
                 
                 # Position constraints based on separation choices
                 # i to left of j: x[i] + w[i] <= x[j]
-                mdl.addConstr(x[i,b] + rectangles[i][0] <= x[j,b] + M * (1 - left[i,j,b]), f"left_{i}_{j}_{b}")
+                mdl.add_constraint(x[i,b] + rectangles[i][0] <= x[j,b] + M * (1 - left[i,j,b]))
                 
                 # i to right of j: x[j] + w[j] <= x[i]  
-                mdl.addConstr(x[j,b] + rectangles[j][0] <= x[i,b] + M * (1 - right[i,j,b]), f"right_{i}_{j}_{b}")
+                mdl.add_constraint(x[j,b] + rectangles[j][0] <= x[i,b] + M * (1 - right[i,j,b]))
                 
                 # i below j: y[i] + h[i] <= y[j]
-                mdl.addConstr(y[i,b] + rectangles[i][1] <= y[j,b] + M * (1 - below[i,j,b]), f"below_{i}_{j}_{b}")
+                mdl.add_constraint(y[i,b] + rectangles[i][1] <= y[j,b] + M * (1 - below[i,j,b]))
                 
                 # i above j: y[j] + h[j] <= y[i]
-                mdl.addConstr(y[j,b] + rectangles[j][1] <= y[i,b] + M * (1 - above[i,j,b]), f"above_{i}_{j}_{b}")
+                mdl.add_constraint(y[j,b] + rectangles[j][1] <= y[i,b] + M * (1 - above[i,j,b]))
+                constraint_count += 5
     
     # 6. Same-sized rectangles C1 constraint
     for i in range(n):
@@ -357,66 +378,72 @@ def solve_bin_packing(W, H, rectangles, lower_bound, upper_bound, time_limit=900
                 for b in range(max_bins):
                     for b2 in range(b):
                         # If i is in bin b and j is in bin b2, then b < b2 is invalid
-                        mdl.addConstr(z[i,b] + z[j,b2] <= 1, f"identical_{i}_{j}_{b}_{b2}")
+                        mdl.add_constraint(z[i,b] + z[j,b2] <= 1)
+                        constraint_count += 1
                 
                 # If both in same bin, impose ordering (lexicographic)
                 for b in range(max_bins):
                     # Either i is to the left of j, or they're at same x and i is below j
-                    mdl.addConstr(left[i,j,b] + below[i,j,b] >= z[i,b] + z[j,b] - 1, f"lex_{i}_{j}_{b}")
+                    mdl.add_constraint(left[i,j,b] + below[i,j,b] >= z[i,b] + z[j,b] - 1)
+                    constraint_count += 1
     
     # Set objective: minimize number of bins used
-    mdl.setObjective(quicksum(u[b] for b in range(max_bins)), GRB.MINIMIZE)
+    mdl.minimize(mdl.sum(u[b] for b in range(max_bins)))
     
     print(f"Model created in {time.time() - start_model_time:.2f}s")
     
     # Save checkpoint before solving
     save_checkpoint(instance_id, best_bins if best_bins != float('inf') else upper_bound)
     
+    mdl.parameters.mip.strategy.heuristicfreq = -1
+    # Set time limit
+    mdl.set_time_limit(time_limit)
+
+    
     # Solve
     print("Solving model...")
     solve_start = time.time()
-    mdl.optimize()
+    solution = mdl.solve(log_output=True)
     solve_time = time.time() - solve_start
     
-    print(f"Solver finished in {solve_time:.2f}s with status: {mdl.status}")
+    print(f"Solver finished in {solve_time:.2f}s with status: {mdl.solve_details.status}")
     
-    if mdl.status == GRB.OPTIMAL or mdl.status == GRB.TIME_LIMIT:
-        if mdl.solCount > 0:
-            # Count bins actually used
-            bins_used = sum(1 for b in range(max_bins) if u[b].X > 0.5)
+    if solution:
+        # Count bins actually used
+        bins_used = sum(1 for b in range(max_bins) if solution.get_value(u[b]) > 0.5)
+        
+        # Update best solution
+        if bins_used < best_bins:
+            best_bins = bins_used
             
-            # Update best solution
-            if bins_used < best_bins:
-                best_bins = bins_used
-                
-                # Extract item assignments
-                assignments = [-1] * n
-                positions = [(0, 0)] * n
-                
-                for i in range(n):
-                    for b in range(max_bins):
-                        if z[i,b].X > 0.5:
-                            assignments[i] = b
-                            positions[i] = (int(x[i,b].X), int(y[i,b].X))
-                            break
-                
-                best_assignments = assignments.copy()
-                best_positions = positions.copy()
-                
-                # Save checkpoint with solution
-                save_checkpoint(instance_id, best_bins)
+            # Extract item assignments
+            assignments = [-1] * n
+            positions = [(0, 0)] * n
             
-            result = {
-                'status': 'OPTIMAL' if mdl.status == GRB.OPTIMAL else 'TIMEOUT',
-                'n_bins': bins_used,
-                'assignments': assignments,
-                'positions': positions,
-                'solve_time': solve_time,
-                'objective_value': mdl.objVal,
-                'gap': mdl.MIPGap * 100 if hasattr(mdl, 'MIPGap') else None
-            }
+            for i in range(n):
+                for b in range(max_bins):
+                    if solution.get_value(z[i,b]) > 0.5:
+                        assignments[i] = b
+                        positions[i] = (int(solution.get_value(x[i,b])), int(solution.get_value(y[i,b])))
+                        break
             
-            return result
+            best_assignments = assignments.copy()
+            best_positions = positions.copy()
+            
+            # Save checkpoint with solution
+            save_checkpoint(instance_id, best_bins)
+        
+        result = {
+            'status': 'OPTIMAL' if 'optimal' in mdl.solve_details.status else 'FEASIBLE',
+            'n_bins': bins_used,
+            'assignments': assignments,
+            'positions': positions,
+            'solve_time': solve_time,
+            'best_bound': mdl.solve_details.best_bound,
+            'gap': mdl.solve_details.mip_relative_gap * 100 if mdl.solve_details.mip_relative_gap is not None else None
+        }
+        
+        return result
     else:
         print("No solution found")
         return None
@@ -425,24 +452,230 @@ if __name__ == "__main__":
     # Controller mode
     if len(sys.argv) == 1:
         # Create output folder if it doesn't exist
-        if not os.path.exists('GUROBI_MIP_C1'):
-            os.makedirs('GUROBI_MIP_C1')
+        if not os.path.exists('CPLEX_MIP_C1'):
+            os.makedirs('CPLEX_MIP_C1')
         
         # Read existing Excel file to check completed instances
-        excel_file = 'GUROBI_MIP_C1.xlsx'
+        excel_file = 'CPLEX_MIP_C1.xlsx'
         if os.path.exists(excel_file):
             try:
                 existing_df = pd.read_excel(excel_file)
                 completed_instances = existing_df['Instance'].tolist() if 'Instance' in existing_df.columns else []
             except:
                 existing_df = pd.DataFrame()
-                completed_instances = []
+                completed_instances = [
+    "",
+    # BENG instances (10 instances)
+    "BENG01", "BENG02", "BENG03", "BENG04", "BENG05",
+    "BENG06", "BENG07", "BENG08", "BENG09", "BENG10",
+    
+    # CLASS instances (500 instances)
+    # CL_1_20_x (10 instances)
+    "CL_1_20_1", "CL_1_20_2", "CL_1_20_3", "CL_1_20_4", "CL_1_20_5",
+    "CL_1_20_6", "CL_1_20_7", "CL_1_20_8", "CL_1_20_9", "CL_1_20_10",
+    
+    # CL_1_40_x (10 instances)
+    "CL_1_40_1", "CL_1_40_2", "CL_1_40_3", "CL_1_40_4", "CL_1_40_5",
+    "CL_1_40_6", "CL_1_40_7", "CL_1_40_8", "CL_1_40_9", "CL_1_40_10",
+    
+    # CL_1_60_x (10 instances)
+    "CL_1_60_1", "CL_1_60_2", "CL_1_60_3", "CL_1_60_4", "CL_1_60_5",
+    "CL_1_60_6", "CL_1_60_7", "CL_1_60_8", "CL_1_60_9", "CL_1_60_10",
+    
+    # CL_1_80_x (10 instances)
+    "CL_1_80_1", "CL_1_80_2", "CL_1_80_3", "CL_1_80_4", "CL_1_80_5",
+    "CL_1_80_6", "CL_1_80_7", "CL_1_80_8", "CL_1_80_9", "CL_1_80_10",
+    
+    # CL_1_100_x (10 instances)
+    "CL_1_100_1", "CL_1_100_2", "CL_1_100_3", "CL_1_100_4", "CL_1_100_5",
+    "CL_1_100_6", "CL_1_100_7", "CL_1_100_8", "CL_1_100_9", "CL_1_100_10",
+    
+    # CL_2_20_x (10 instances)
+    "CL_2_20_1", "CL_2_20_2", "CL_2_20_3", "CL_2_20_4", "CL_2_20_5",
+    "CL_2_20_6", "CL_2_20_7", "CL_2_20_8", "CL_2_20_9", "CL_2_20_10",
+    
+    # CL_2_40_x (10 instances)
+    "CL_2_40_1", "CL_2_40_2", "CL_2_40_3", "CL_2_40_4", "CL_2_40_5",
+    "CL_2_40_6", "CL_2_40_7", "CL_2_40_8", "CL_2_40_9", "CL_2_40_10",
+    
+    # CL_2_60_x (10 instances)
+    "CL_2_60_1", "CL_2_60_2", "CL_2_60_3", "CL_2_60_4", "CL_2_60_5",
+    "CL_2_60_6", "CL_2_60_7", "CL_2_60_8", "CL_2_60_9", "CL_2_60_10",
+    
+    # CL_2_80_x (10 instances)
+    "CL_2_80_1", "CL_2_80_2", "CL_2_80_3", "CL_2_80_4", "CL_2_80_5",
+    "CL_2_80_6", "CL_2_80_7", "CL_2_80_8", "CL_2_80_9", "CL_2_80_10",
+    
+    # CL_2_100_x (10 instances)
+    "CL_2_100_1", "CL_2_100_2", "CL_2_100_3", "CL_2_100_4", "CL_2_100_5",
+    "CL_2_100_6", "CL_2_100_7", "CL_2_100_8", "CL_2_100_9", "CL_2_100_10",
+    
+    # CL_3_20_x (10 instances)
+    "CL_3_20_1", "CL_3_20_2", "CL_3_20_3", "CL_3_20_4", "CL_3_20_5",
+    "CL_3_20_6", "CL_3_20_7", "CL_3_20_8", "CL_3_20_9", "CL_3_20_10",
+    
+    # CL_3_40_x (10 instances)
+    "CL_3_40_1", "CL_3_40_2", "CL_3_40_3", "CL_3_40_4", "CL_3_40_5",
+    "CL_3_40_6", "CL_3_40_7", "CL_3_40_8", "CL_3_40_9", "CL_3_40_10",
+    
+    # CL_3_60_x (10 instances)
+    "CL_3_60_1", "CL_3_60_2", "CL_3_60_3", "CL_3_60_4", "CL_3_60_5",
+    "CL_3_60_6", "CL_3_60_7", "CL_3_60_8", "CL_3_60_9", "CL_3_60_10",
+    
+    # CL_3_80_x (10 instances)
+    "CL_3_80_1", "CL_3_80_2", "CL_3_80_3", "CL_3_80_4", "CL_3_80_5",
+    "CL_3_80_6", "CL_3_80_7", "CL_3_80_8", "CL_3_80_9", "CL_3_80_10",
+    
+    # CL_3_100_x (10 instances)
+    "CL_3_100_1", "CL_3_100_2", "CL_3_100_3", "CL_3_100_4", "CL_3_100_5",
+    "CL_3_100_6", "CL_3_100_7", "CL_3_100_8", "CL_3_100_9", "CL_3_100_10",
+    
+    # CL_4_20_x (10 instances)
+    "CL_4_20_1", "CL_4_20_2", "CL_4_20_3", "CL_4_20_4", "CL_4_20_5",
+    "CL_4_20_6", "CL_4_20_7", "CL_4_20_8", "CL_4_20_9", "CL_4_20_10",
+    
+    # CL_4_40_x (10 instances)
+    "CL_4_40_1", "CL_4_40_2", "CL_4_40_3", "CL_4_40_4", "CL_4_40_5",
+    "CL_4_40_6", "CL_4_40_7", "CL_4_40_8", "CL_4_40_9", "CL_4_40_10",
+    
+    # CL_4_60_x (10 instances)
+    "CL_4_60_1", "CL_4_60_2", "CL_4_60_3", "CL_4_60_4", "CL_4_60_5",
+    "CL_4_60_6", "CL_4_60_7", "CL_4_60_8", "CL_4_60_9", "CL_4_60_10",
+    
+    # CL_4_80_x (10 instances)
+    "CL_4_80_1", "CL_4_80_2", "CL_4_80_3", "CL_4_80_4", "CL_4_80_5",
+    "CL_4_80_6", "CL_4_80_7", "CL_4_80_8", "CL_4_80_9", "CL_4_80_10",
+    
+    # CL_4_100_x (10 instances)
+    "CL_4_100_1", "CL_4_100_2", "CL_4_100_3", "CL_4_100_4", "CL_4_100_5",
+    "CL_4_100_6", "CL_4_100_7", "CL_4_100_8", "CL_4_100_9", "CL_4_100_10",
+    
+    # CL_5_20_x (10 instances)
+    "CL_5_20_1", "CL_5_20_2", "CL_5_20_3", "CL_5_20_4", "CL_5_20_5",
+    "CL_5_20_6", "CL_5_20_7", "CL_5_20_8", "CL_5_20_9", "CL_5_20_10",
+    
+    # CL_5_40_x (10 instances)
+    "CL_5_40_1", "CL_5_40_2", "CL_5_40_3", "CL_5_40_4", "CL_5_40_5",
+    "CL_5_40_6", "CL_5_40_7", "CL_5_40_8", "CL_5_40_9", "CL_5_40_10",
+    
+    # CL_5_60_x (10 instances)
+    "CL_5_60_1", "CL_5_60_2", "CL_5_60_3", "CL_5_60_4", "CL_5_60_5",
+    "CL_5_60_6", "CL_5_60_7", "CL_5_60_8", "CL_5_60_9", "CL_5_60_10",
+    
+    # CL_5_80_x (10 instances)
+    "CL_5_80_1", "CL_5_80_2", "CL_5_80_3", "CL_5_80_4", "CL_5_80_5",
+    "CL_5_80_6", "CL_5_80_7", "CL_5_80_8", "CL_5_80_9", "CL_5_80_10",
+    
+    # CL_5_100_x (10 instances)
+    "CL_5_100_1", "CL_5_100_2", "CL_5_100_3", "CL_5_100_4", "CL_5_100_5",
+    "CL_5_100_6", "CL_5_100_7", "CL_5_100_8", "CL_5_100_9", "CL_5_100_10",
+    
+    # CL_6_20_x (10 instances)
+    "CL_6_20_1", "CL_6_20_2", "CL_6_20_3", "CL_6_20_4", "CL_6_20_5",
+    "CL_6_20_6", "CL_6_20_7", "CL_6_20_8", "CL_6_20_9", "CL_6_20_10",
+    
+    # CL_6_40_x (10 instances)
+    "CL_6_40_1", "CL_6_40_2", "CL_6_40_3", "CL_6_40_4", "CL_6_40_5",
+    "CL_6_40_6", "CL_6_40_7", "CL_6_40_8", "CL_6_40_9", "CL_6_40_10",
+    
+    # CL_6_60_x (10 instances)
+    "CL_6_60_1", "CL_6_60_2", "CL_6_60_3", "CL_6_60_4", "CL_6_60_5",
+    "CL_6_60_6", "CL_6_60_7", "CL_6_60_8", "CL_6_60_9", "CL_6_60_10",
+    
+    # CL_6_80_x (10 instances)
+    "CL_6_80_1", "CL_6_80_2", "CL_6_80_3", "CL_6_80_4", "CL_6_80_5",
+    "CL_6_80_6", "CL_6_80_7", "CL_6_80_8", "CL_6_80_9", "CL_6_80_10",
+    
+    # CL_6_100_x (10 instances)
+    "CL_6_100_1", "CL_6_100_2", "CL_6_100_3", "CL_6_100_4", "CL_6_100_5",
+    "CL_6_100_6", "CL_6_100_7", "CL_6_100_8", "CL_6_100_9", "CL_6_100_10",
+    
+    # CL_7_20_x (10 instances)
+    "CL_7_20_1", "CL_7_20_2", "CL_7_20_3", "CL_7_20_4", "CL_7_20_5",
+    "CL_7_20_6", "CL_7_20_7", "CL_7_20_8", "CL_7_20_9", "CL_7_20_10",
+    
+    # CL_7_40_x (10 instances)
+    "CL_7_40_1", "CL_7_40_2", "CL_7_40_3", "CL_7_40_4", "CL_7_40_5",
+    "CL_7_40_6", "CL_7_40_7", "CL_7_40_8", "CL_7_40_9", "CL_7_40_10",
+    
+    # CL_7_60_x (10 instances)
+    "CL_7_60_1", "CL_7_60_2", "CL_7_60_3", "CL_7_60_4", "CL_7_60_5",
+    "CL_7_60_6", "CL_7_60_7", "CL_7_60_8", "CL_7_60_9", "CL_7_60_10",
+    
+    # CL_7_80_x (10 instances)
+    "CL_7_80_1", "CL_7_80_2", "CL_7_80_3", "CL_7_80_4", "CL_7_80_5",
+    "CL_7_80_6", "CL_7_80_7", "CL_7_80_8", "CL_7_80_9", "CL_7_80_10",
+    
+    # CL_7_100_x (10 instances)
+    "CL_7_100_1", "CL_7_100_2", "CL_7_100_3", "CL_7_100_4", "CL_7_100_5",
+    "CL_7_100_6", "CL_7_100_7", "CL_7_100_8", "CL_7_100_9", "CL_7_100_10",
+    
+    # CL_8_20_x (10 instances)
+    "CL_8_20_1", "CL_8_20_2", "CL_8_20_3", "CL_8_20_4", "CL_8_20_5",
+    "CL_8_20_6", "CL_8_20_7", "CL_8_20_8", "CL_8_20_9", "CL_8_20_10",
+    
+    # CL_8_40_x (10 instances)
+    "CL_8_40_1", "CL_8_40_2", "CL_8_40_3", "CL_8_40_4", "CL_8_40_5",
+    "CL_8_40_6", "CL_8_40_7", "CL_8_40_8", "CL_8_40_9", "CL_8_40_10",
+    
+    # CL_8_60_x (10 instances)
+    "CL_8_60_1", "CL_8_60_2", "CL_8_60_3", "CL_8_60_4", "CL_8_60_5",
+    "CL_8_60_6", "CL_8_60_7", "CL_8_60_8", "CL_8_60_9", "CL_8_60_10",
+    
+    # CL_8_80_x (10 instances)
+    "CL_8_80_1", "CL_8_80_2", "CL_8_80_3", "CL_8_80_4", "CL_8_80_5",
+    "CL_8_80_6", "CL_8_80_7", "CL_8_80_8", "CL_8_80_9", "CL_8_80_10",
+    
+    # CL_8_100_x (10 instances)
+    "CL_8_100_1", "CL_8_100_2", "CL_8_100_3", "CL_8_100_4", "CL_8_100_5",
+    "CL_8_100_6", "CL_8_100_7", "CL_8_100_8", "CL_8_100_9", "CL_8_100_10",
+    
+    # CL_9_20_x (10 instances)
+    "CL_9_20_1", "CL_9_20_2", "CL_9_20_3", "CL_9_20_4", "CL_9_20_5",
+    "CL_9_20_6", "CL_9_20_7", "CL_9_20_8", "CL_9_20_9", "CL_9_20_10",
+    
+    # CL_9_40_x (10 instances)
+    "CL_9_40_1", "CL_9_40_2", "CL_9_40_3", "CL_9_40_4", "CL_9_40_5",
+    "CL_9_40_6", "CL_9_40_7", "CL_9_40_8", "CL_9_40_9", "CL_9_40_10",
+    
+    # CL_9_60_x (10 instances)
+    "CL_9_60_1", "CL_9_60_2", "CL_9_60_3", "CL_9_60_4", "CL_9_60_5",
+    "CL_9_60_6", "CL_9_60_7", "CL_9_60_8", "CL_9_60_9", "CL_9_60_10",
+    
+    # CL_9_80_x (10 instances)
+    "CL_9_80_1", "CL_9_80_2", "CL_9_80_3", "CL_9_80_4", "CL_9_80_5",
+    "CL_9_80_6", "CL_9_80_7", "CL_9_80_8", "CL_9_80_9", "CL_9_80_10",
+    
+    # CL_9_100_x (10 instances)
+    "CL_9_100_1", "CL_9_100_2", "CL_9_100_3", "CL_9_100_4", "CL_9_100_5",
+    "CL_9_100_6", "CL_9_100_7", "CL_9_100_8", "CL_9_100_9", "CL_9_100_10",
+    
+    # CL_10_20_x (10 instances)
+    "CL_10_20_1", "CL_10_20_2", "CL_10_20_3", "CL_10_20_4", "CL_10_20_5",
+    "CL_10_20_6", "CL_10_20_7", "CL_10_20_8", "CL_10_20_9", "CL_10_20_10",
+    
+    # CL_10_40_x (10 instances)
+    "CL_10_40_1", "CL_10_40_2", "CL_10_40_3", "CL_10_40_4", "CL_10_40_5",
+    "CL_10_40_6", "CL_10_40_7", "CL_10_40_8", "CL_10_40_9", "CL_10_40_10",
+    
+    # CL_10_60_x (10 instances)
+    "CL_10_60_1", "CL_10_60_2", "CL_10_60_3", "CL_10_60_4", "CL_10_60_5",
+    "CL_10_60_6", "CL_10_60_7", "CL_10_60_8", "CL_10_60_9", "CL_10_60_10",
+    
+    # CL_10_80_x (10 instances)
+    "CL_10_80_1", "CL_10_80_2", "CL_10_80_3", "CL_10_80_4", "CL_10_80_5",
+    "CL_10_80_6", "CL_10_80_7", "CL_10_80_8", "CL_10_80_9", "CL_10_80_10",
+    
+    # CL_10_100_x (10 instances)
+    "CL_10_100_1", "CL_10_100_2", "CL_10_100_3", "CL_10_100_4", "CL_10_100_5",
+    "CL_10_100_6", "CL_10_100_7", "CL_10_100_8", "CL_10_100_9", "CL_10_100_10"
+]
         else:
             existing_df = pd.DataFrame()
             completed_instances = []
         
         # Set timeout
-        TIMEOUT = 900  # 30 minutes
+        TIMEOUT = 1800  # 30 minutes
         
         # Start from instance 1 (skip index 0 which is empty)
         for instance_id in range(1, len(instances)):
@@ -458,12 +691,12 @@ if __name__ == "__main__":
             print(f"{'=' * 50}")
             
             # Clean up previous result files
-            for temp_file in [f'results_GUROBI_MIP_C1_{instance_id}.json', f'checkpoint_GUROBI_MIP_C1_{instance_id}.json']:
+            for temp_file in [f'results_CPLEX_MIP_C1_{instance_id}.json', f'checkpoint_CPLEX_MIP_C1_{instance_id}.json']:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
             
             # Run instance with runlim
-            command = f"./runlim -r {TIMEOUT} python3 GUROBI_MIP_C1.py {instance_id}"
+            command = f"./runlim -r {TIMEOUT} python3 CPLEX_MIP_C1.py {instance_id}"
             
             try:
                 process = subprocess.Popen(command, shell=True)
@@ -472,12 +705,12 @@ if __name__ == "__main__":
                 
                 # Check results
                 result = None
-
-                if os.path.exists(f'results_GUROBI_MIP_C1_{instance_id}.json'):
-                    with open(f'results_GUROBI_MIP_C1_{instance_id}.json', 'r') as f:
+                
+                if os.path.exists(f'results_CPLEX_MIP_C1_{instance_id}.json'):
+                    with open(f'results_CPLEX_MIP_C1_{instance_id}.json', 'r') as f:
                         result = json.load(f)
-                elif os.path.exists(f'checkpoint_GUROBI_MIP_C1_{instance_id}.json'):
-                    with open(f'checkpoint_GUROBI_MIP_C1_{instance_id}.json', 'r') as f:
+                elif os.path.exists(f'checkpoint_CPLEX_MIP_C1_{instance_id}.json'):
+                    with open(f'checkpoint_CPLEX_MIP_C1_{instance_id}.json', 'r') as f:
                         result = json.load(f)
                     result['Status'] = 'TIMEOUT'
                     result['Instance'] = instance_name
@@ -515,7 +748,7 @@ if __name__ == "__main__":
                 print(f"Error running instance {instance_name}: {str(e)}")
             
             # Clean up temp files
-            for temp_file in [f'results_GUROBI_MIP_C1_{instance_id}.json', f'checkpoint_GUROBI_MIP_C1_{instance_id}.json']:
+            for temp_file in [f'results_CPLEX_MIP_C1_{instance_id}.json', f'checkpoint_CPLEX_MIP_C1_{instance_id}.json']:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
         
@@ -547,22 +780,21 @@ if __name__ == "__main__":
                 line = input_data[i].split()
                 w = int(line[0])
                 h = int(line[1])
-                demand = int(line[2])  # Unused in current model
-                for _ in range(demand):
+                d = int(line[2])
+                for _ in range(d):
                     rectangles.append((w, h))
-            
             # Calculate bounds
             lower_bound = calculate_lower_bound(rectangles, W, H)
             upper_bound = min(n_items, first_fit_upper_bound(rectangles, W, H))
             
-            print(f"Solving 2D Bin Packing with Gurobi MIP and C1 symmetry breaking for instance {instance_name}")
+            print(f"Solving 2D Bin Packing with CPLEX MIP and C1 symmetry breaking for instance {instance_name}")
             print(f"Bin size: {W}x{H}")
             print(f"Number of items: {n_items}")
             print(f"Lower bound: {lower_bound}")
             print(f"Upper bound: {upper_bound}")
             
             # Solve with MIP
-            solution = solve_bin_packing(W, H, rectangles, lower_bound, upper_bound, time_limit=900)
+            solution = solve_bin_packing(W, H, rectangles, lower_bound, upper_bound, time_limit=1800)
             
             stop = timeit.default_timer()
             runtime = stop - start
@@ -570,7 +802,7 @@ if __name__ == "__main__":
             # Process result
             if solution:
                 n_bins = solution['n_bins']
-                status = 'OPTIMAL' if solution['status'] == 'OPTIMAL' else 'TIMELIMIT'
+                status = 'OPTIMAL' if solution['status'] == 'OPTIMAL' else 'FEASIBLE'
                 
                 # Display solution
                 display_solution(W, H, rectangles, solution['positions'], solution['assignments'], instance_name)
@@ -592,7 +824,7 @@ if __name__ == "__main__":
             }
             
             # Save to Excel
-            excel_file = 'GUROBI_MIP_C1.xlsx'
+            excel_file = 'CPLEX_MIP_C1.xlsx'
             if os.path.exists(excel_file):
                 try:
                     existing_df = pd.read_excel(excel_file)
@@ -614,7 +846,7 @@ if __name__ == "__main__":
             print(f"Results saved to {excel_file}")
             
             # Save JSON result for controller
-            with open(f'results_GUROBI_MIP_C1_{instance_id}.json', 'w') as f:
+            with open(f'results_CPLEX_MIP_C1_{instance_id}.json', 'w') as f:
                 json.dump(result, f)
             
             print(f"Instance {instance_name} completed - Runtime: {runtime:.2f}s, Bins: {n_bins}")
@@ -632,7 +864,7 @@ if __name__ == "__main__":
             }
             
             # Save error result to Excel
-            excel_file = 'GUROBI_MIP_C1.xlsx'
+            excel_file = 'CPLEX_MIP_C1.xlsx'
             if os.path.exists(excel_file):
                 try:
                     existing_df = pd.read_excel(excel_file)
@@ -653,5 +885,5 @@ if __name__ == "__main__":
             existing_df.to_excel(excel_file, index=False)
             print(f"Error results saved to {excel_file}")
             
-            with open(f'results_GUROBI_MIP_C1_{instance_id}.json', 'w') as f:
+            with open(f'results_CPLEX_MIP_C1_{instance_id}.json', 'w') as f:
                 json.dump(result, f)
