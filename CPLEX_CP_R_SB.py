@@ -106,11 +106,10 @@ set2 = [
     "CHL1", "CHL2", "CHL5", "CHL6", "CHL7",
     "CU1", "CU2",
     "CW1", "CW2", "CW3",
-     "Hchl2", "Hchl3s", "Hchl4s", "Hchl5s", "Hchl6s",
+     "Hchl2", "Hchl3s", "Hchl4s", "Hchl6s",
     "Hchl7s", "Hchl8s", "Hchl9",
     "HH", "OF1", "OF2",
-    "STS2", "STS4", "W", "2", "3"
-    
+    "STS2", "STS4", "W", "2", "3" 
 ]
 
 
@@ -128,6 +127,8 @@ instances = set2
 def first_fit_upper_bound_with_rotation(rectangles, W, H):
     """First-fit heuristic to get upper bound with rotation allowed"""
     # Each bin is a list of placed rectangles: (x, y, w, h)
+    rectangles = rectangles.copy()  # Avoid modifying original list
+    rectangles.sort(key=lambda x: max(x[0], x[1]), reverse=True)  # Sort by max dimension for better packing
     bins = []
     
     def fits(bin_rects, w, h, W, H):

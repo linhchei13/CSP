@@ -420,21 +420,6 @@ def CSP_MaxSAT_Rotation(rectangles, max_bins, bin_width, bin_height):
         for bin_idx in range(max_bins):
             for i in range(len(rectangles)):
                 for j in range(i + 1, len(rectangles)):
-                    # Symmetry Breaking similar to SPP_R_SB
-                    if rectangles[i][0] == max_width and rectangles[j][0] == second_max_width:
-                        # Fix the position of the largest and second largest rectangle
-                        add_non_overlapping(False, i, j, bin_idx, False, False, True, True)
-                        add_non_overlapping(True, i, j, bin_idx, False, False, True, True)
-                    elif min(rectangles[i][0], rectangles[i][1]) + min(rectangles[j][0], rectangles[j][1]) > bin_width:
-                        # Large-rectangles horizontal
-                        add_non_overlapping(False, i, j, bin_idx, False, False, True, True)
-                        add_non_overlapping(True, i, j, bin_idx, False, False, True, True)
-                    elif min(rectangles[i][0], rectangles[i][1]) + min(rectangles[j][0], rectangles[j][1]) > bin_height:
-                        # Large rectangles vertical
-                        add_non_overlapping(False, i, j, bin_idx, True, True, False, False)
-                        add_non_overlapping(True, i, j, bin_idx, True, True, False, False)
-                    else:
-                        # Normal rectangles
                         add_non_overlapping(False, i, j, bin_idx, True, True, True, True)
                         add_non_overlapping(True, i, j, bin_idx, True, True, True, True)
 

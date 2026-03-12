@@ -167,11 +167,10 @@ set2 = [
     "CHL1", "CHL2", "CHL5", "CHL6", "CHL7",
     "CU1", "CU2",
     "CW1", "CW2", "CW3",
-     "Hchl2", "Hchl3s", "Hchl4s", "Hchl5s", "Hchl6s",
+     "Hchl2", "Hchl3s", "Hchl4s", "Hchl6s",
     "Hchl7s", "Hchl8s", "Hchl9",
     "HH", "OF1", "OF2",
-    "STS2", "STS4", "W", "2", "3"
-    
+    "STS2", "STS4", "W", "2", "3" 
 ]
 
 

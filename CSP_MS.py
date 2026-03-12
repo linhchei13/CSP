@@ -333,22 +333,6 @@ def CSP_MaxSAT(rectangles, lower_bound, upper_bound, bin_width, bin_height):
             # Apply C1 symmetry breaking rules
             h1, h2, v1, v2 = True, True, True, True  # Default: all four directions
             
-            # Large-rectangles horizontal
-            if i_width + j_width > bin_width:
-                h1, h2 = False, False
-            # Large-rectangles vertical
-            elif i_height + j_height > bin_height:
-                v1, v2 = False, False
-            # Same-sized rectangles
-            elif rectangles[i] == rectangles[j]:
-                h2 = False  # Only allow i left of j, not j left of i
-            # Largest width rectangle symmetry breaking
-            elif i_width == max_width and j_width > (bin_width - i_width) / 2:
-                h1 = False
-            # Largest height rectangle symmetry breaking
-            elif i_height == max_height and j_height > (bin_height - i_height) / 2:
-                v1 = False
-            
             # Apply the four-literal clause
             four_literal = bin_condition.copy()
             if h1: four_literal.append(variables[f"lr{i + 1},{j + 1}"])

@@ -1,8 +1,3 @@
-"""
-2D Bin Packing Problem - Non-Stacking Version with MIP using Gurobi
-Symmetry Breaking: C1 (Enhanced implementation)
-"""
-
 from gurobipy import Model, GRB, quicksum
 import matplotlib.pyplot as plt
 import numpy as np
@@ -40,7 +35,7 @@ def handle_interrupt(signum, frame):
         'Status': 'TIMEOUT'
     }
     
-    with open(f'results_GUROBI_MIP_C1_{instance_id}.json', 'w') as f:
+    with open(f'results_GUROBI_MIP_SB_{instance_id}.json', 'w') as f:
         json.dump(result, f)
     
     sys.exit(0)
@@ -50,8 +45,8 @@ signal.signal(signal.SIGTERM, handle_interrupt)
 signal.signal(signal.SIGINT, handle_interrupt)
 
 # Create output folder if it doesn't exist
-if not os.path.exists('GUROBI_MIP_C1'):
-    os.makedirs('GUROBI_MIP_C1')
+if not os.path.exists('GUROBI_MIP_SB'):
+    os.makedirs('GUROBI_MIP_SB')
 
 
 def first_fit_upper_bound(rectangles, W, H):
@@ -145,11 +140,10 @@ set2 = [
     "CHL1", "CHL2", "CHL5", "CHL6", "CHL7",
     "CU1", "CU2",
     "CW1", "CW2", "CW3",
-     "Hchl2", "Hchl3s", "Hchl4s", "Hchl5s", "Hchl6s",
+     "Hchl2", "Hchl3s", "Hchl4s", "Hchl6s",
     "Hchl7s", "Hchl8s", "Hchl9",
     "HH", "OF1", "OF2",
-    "STS2", "STS4", "W", "2", "3"
-    
+    "STS2", "STS4", "W", "2", "3" 
 ]
 
 
@@ -179,7 +173,7 @@ def save_checkpoint(instance_id, bins, status="IN_PROGRESS"):
         'Status': status
     }
     
-    with open(f'checkpoint_GUROBI_MIP_C1_{instance_id}.json', 'w') as f:
+    with open(f'checkpoint_GUROBI_MIP_SB_{instance_id}.json', 'w') as f:
         json.dump(checkpoint, f)
 
 def display_solution(W, H, rectangles, positions, assignments, instance_name):
@@ -242,7 +236,7 @@ def display_solution(W, H, rectangles, positions, assignments, instance_name):
         axes[j].axis('off')
     
     plt.tight_layout(rect=[0, 0, 1, 0.95])  # Adjust for suptitle
-    plt.savefig(f'GUROBI_MIP_C1/{instance_name}.png', dpi=150, bbox_inches='tight')
+    plt.savefig(f'GUROBI_MIP_SB/{instance_name}.png', dpi=150, bbox_inches='tight')
     plt.close()
 
 def solve_bin_packing(W, H, rectangles, lower_bound, upper_bound, time_limit=1800):
@@ -263,7 +257,7 @@ def solve_bin_packing(W, H, rectangles, lower_bound, upper_bound, time_limit=180
     global best_bins, best_assignments, best_positions
     
     # Create the model
-    mdl = Model("2D_BinPacking_C1")
+    mdl = Model("2D_BinPacking_SB")
     mdl.setParam('OutputFlag', 1)  # Enable Gurobi output logs
     mdl.setParam('TimeLimit', time_limit)  # Set time limit
     
@@ -440,11 +434,11 @@ if __name__ == "__main__":
     # Controller mode
     if len(sys.argv) == 1:
         # Create output folder if it doesn't exist
-        if not os.path.exists('GUROBI_MIP_C1'):
-            os.makedirs('GUROBI_MIP_C1')
+        if not os.path.exists('GUROBI_MIP_SB'):
+            os.makedirs('GUROBI_MIP_SB')
         
         # Read existing Excel file to check completed instances
-        excel_file = 'GUROBI_MIP_C1.xlsx'
+        excel_file = 'GUROBI_MIP_SB.xlsx'
         if os.path.exists(excel_file):
             try:
                 existing_df = pd.read_excel(excel_file)
@@ -473,12 +467,12 @@ if __name__ == "__main__":
             print(f"{'=' * 50}")
             
             # Clean up previous result files
-            for temp_file in [f'results_GUROBI_MIP_C1_{instance_id}.json', f'checkpoint_GUROBI_MIP_C1_{instance_id}.json']:
+            for temp_file in [f'results_GUROBI_MIP_SB_{instance_id}.json', f'checkpoint_GUROBI_MIP_SB_{instance_id}.json']:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
             
             # Run instance with runlim
-            command = f"./runlim -r {TIMEOUT} python3 GUROBI_MIP_C1.py {instance_id}"
+            command = f"./runlim -r {TIMEOUT} python3 GUROBI_MIP_SB.py {instance_id}"
             
             try:
                 process = subprocess.Popen(command, shell=True)
@@ -488,11 +482,11 @@ if __name__ == "__main__":
                 # Check results
                 result = None
 
-                if os.path.exists(f'results_GUROBI_MIP_C1_{instance_id}.json'):
-                    with open(f'results_GUROBI_MIP_C1_{instance_id}.json', 'r') as f:
+                if os.path.exists(f'results_GUROBI_MIP_SB_{instance_id}.json'):
+                    with open(f'results_GUROBI_MIP_SB_{instance_id}.json', 'r') as f:
                         result = json.load(f)
-                elif os.path.exists(f'checkpoint_GUROBI_MIP_C1_{instance_id}.json'):
-                    with open(f'checkpoint_GUROBI_MIP_C1_{instance_id}.json', 'r') as f:
+                elif os.path.exists(f'checkpoint_GUROBI_MIP_SB_{instance_id}.json'):
+                    with open(f'checkpoint_GUROBI_MIP_SB_{instance_id}.json', 'r') as f:
                         result = json.load(f)
                     result['Status'] = 'TIMEOUT'
                     result['Instance'] = instance_name
@@ -530,7 +524,7 @@ if __name__ == "__main__":
                 print(f"Error running instance {instance_name}: {str(e)}")
             
             # Clean up temp files
-            for temp_file in [f'results_GUROBI_MIP_C1_{instance_id}.json', f'checkpoint_GUROBI_MIP_C1_{instance_id}.json']:
+            for temp_file in [f'results_GUROBI_MIP_SB_{instance_id}.json', f'checkpoint_GUROBI_MIP_SB_{instance_id}.json']:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
         
@@ -607,7 +601,7 @@ if __name__ == "__main__":
             }
             
             # Save to Excel
-            excel_file = 'GUROBI_MIP_C1.xlsx'
+            excel_file = 'GUROBI_MIP_SB.xlsx'
             if os.path.exists(excel_file):
                 try:
                     existing_df = pd.read_excel(excel_file)
@@ -629,7 +623,7 @@ if __name__ == "__main__":
             print(f"Results saved to {excel_file}")
             
             # Save JSON result for controller
-            with open(f'results_GUROBI_MIP_C1_{instance_id}.json', 'w') as f:
+            with open(f'results_GUROBI_MIP_SB_{instance_id}.json', 'w') as f:
                 json.dump(result, f)
             
             print(f"Instance {instance_name} completed - Runtime: {runtime:.2f}s, Bins: {n_bins}")
@@ -647,7 +641,7 @@ if __name__ == "__main__":
             }
             
             # Save error result to Excel
-            excel_file = 'GUROBI_MIP_C1.xlsx'
+            excel_file = 'GUROBI_MIP_SB.xlsx'
             if os.path.exists(excel_file):
                 try:
                     existing_df = pd.read_excel(excel_file)
@@ -668,5 +662,5 @@ if __name__ == "__main__":
             existing_df.to_excel(excel_file, index=False)
             print(f"Error results saved to {excel_file}")
             
-            with open(f'results_GUROBI_MIP_C1_{instance_id}.json', 'w') as f:
+            with open(f'results_GUROBI_MIP_SB_{instance_id}.json', 'w') as f:
                 json.dump(result, f)

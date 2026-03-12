@@ -4,6 +4,7 @@ Symmetry Breaking: C1 (Enhanced implementation)
 """
 
 from docplex.mp.model import Model
+from docplex.mp.context import Context
 import matplotlib.pyplot as plt
 import numpy as np
 import time
@@ -40,7 +41,7 @@ def handle_interrupt(signum, frame):
         'Status': 'TIMEOUT'
     }
     
-    with open(f'results_CPLEX_MIP_C1_{instance_id}.json', 'w') as f:
+    with open(f'results_CPLEX_MIP_SB_{instance_id}.json', 'w') as f:
         json.dump(result, f)
     
     sys.exit(0)
@@ -50,8 +51,8 @@ signal.signal(signal.SIGTERM, handle_interrupt)
 signal.signal(signal.SIGINT, handle_interrupt)
 
 # Create output folder if it doesn't exist
-if not os.path.exists('CPLEX_MIP_C1'):
-    os.makedirs('CPLEX_MIP_C1')
+if not os.path.exists('CPLEX_MIP_SB'):
+    os.makedirs('CPLEX_MIP_SB')
 
 
 
@@ -104,11 +105,10 @@ set2 = [
     "CHL1", "CHL2", "CHL5", "CHL6", "CHL7",
     "CU1", "CU2",
     "CW1", "CW2", "CW3",
-     "Hchl2", "Hchl3s", "Hchl4s", "Hchl5s", "Hchl6s",
+     "Hchl2", "Hchl3s", "Hchl4s", "Hchl6s",
     "Hchl7s", "Hchl8s", "Hchl9",
     "HH", "OF1", "OF2",
-    "STS2", "STS4", "W", "2", "3"
-    
+    "STS2", "STS4", "W", "2", "3" 
 ]
 
 
@@ -177,7 +177,7 @@ def save_checkpoint(instance_id, bins, status="IN_PROGRESS"):
         'Status': status
     }
     
-    with open(f'checkpoint_CPLEX_MIP_C1_{instance_id}.json', 'w') as f:
+    with open(f'checkpoint_CPLEX_MIP_SB_{instance_id}.json', 'w') as f:
         json.dump(checkpoint, f)
 
 def display_solution(W, H, rectangles, positions, assignments, instance_name):
@@ -240,7 +240,7 @@ def display_solution(W, H, rectangles, positions, assignments, instance_name):
         axes[j].axis('off')
     
     plt.tight_layout(rect=[0, 0, 1, 0.95])  # Adjust for suptitle
-    plt.savefig(f'CPLEX_MIP_C1/{instance_name}.png', dpi=150, bbox_inches='tight')
+    plt.savefig(f'CPLEX_MIP_SB/{instance_name}.png', dpi=150, bbox_inches='tight')
     plt.close()
 
 def solve_bin_packing(W, H, rectangles, lower_bound, upper_bound, time_limit=1800):
@@ -260,8 +260,17 @@ def solve_bin_packing(W, H, rectangles, lower_bound, upper_bound, time_limit=180
     """
     global best_bins, best_assignments, best_positions
     
-    # Create the model
-    mdl = Model(name="2D_BinPacking_C1")
+    # Configure CPLEX to use academic/full version
+    # Try to use local CPLEX installation instead of community edition
+    try:
+        # Create context that will use the full CPLEX installation
+        context = Context.make_default_context()
+        # Point to your CPLEX installation if needed
+        # context.cplex_location = r'C:\Program Files\IBM\ILOG\CPLEX_Studio221\cplex\bin\x64_win64\cplex.exe'
+        mdl = Model(name="2D_BinPacking_SB", context=context)
+    except:
+        # Fallback to default (may still use community edition)
+        mdl = Model(name="2D_BinPacking_SB")
     
     n = len(rectangles)
     max_bins = min(n, upper_bound)  # No need for more bins than items
@@ -452,11 +461,11 @@ if __name__ == "__main__":
     # Controller mode
     if len(sys.argv) == 1:
         # Create output folder if it doesn't exist
-        if not os.path.exists('CPLEX_MIP_C1'):
-            os.makedirs('CPLEX_MIP_C1')
+        if not os.path.exists('CPLEX_MIP_SB'):
+            os.makedirs('CPLEX_MIP_SB')
         
         # Read existing Excel file to check completed instances
-        excel_file = 'CPLEX_MIP_C1.xlsx'
+        excel_file = 'CPLEX_MIP_SB.xlsx'
         if os.path.exists(excel_file):
             try:
                 existing_df = pd.read_excel(excel_file)
@@ -691,12 +700,12 @@ if __name__ == "__main__":
             print(f"{'=' * 50}")
             
             # Clean up previous result files
-            for temp_file in [f'results_CPLEX_MIP_C1_{instance_id}.json', f'checkpoint_CPLEX_MIP_C1_{instance_id}.json']:
+            for temp_file in [f'results_CPLEX_MIP_SB_{instance_id}.json', f'checkpoint_CPLEX_MIP_SB_{instance_id}.json']:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
             
             # Run instance with runlim
-            command = f"./runlim -r {TIMEOUT} python3 CPLEX_MIP_C1.py {instance_id}"
+            command = f"./runlim -r {TIMEOUT} python3 CPLEX_MIP_SB.py {instance_id}"
             
             try:
                 process = subprocess.Popen(command, shell=True)
@@ -706,11 +715,11 @@ if __name__ == "__main__":
                 # Check results
                 result = None
                 
-                if os.path.exists(f'results_CPLEX_MIP_C1_{instance_id}.json'):
-                    with open(f'results_CPLEX_MIP_C1_{instance_id}.json', 'r') as f:
+                if os.path.exists(f'results_CPLEX_MIP_SB_{instance_id}.json'):
+                    with open(f'results_CPLEX_MIP_SB_{instance_id}.json', 'r') as f:
                         result = json.load(f)
-                elif os.path.exists(f'checkpoint_CPLEX_MIP_C1_{instance_id}.json'):
-                    with open(f'checkpoint_CPLEX_MIP_C1_{instance_id}.json', 'r') as f:
+                elif os.path.exists(f'checkpoint_CPLEX_MIP_SB_{instance_id}.json'):
+                    with open(f'checkpoint_CPLEX_MIP_SB_{instance_id}.json', 'r') as f:
                         result = json.load(f)
                     result['Status'] = 'TIMEOUT'
                     result['Instance'] = instance_name
@@ -748,7 +757,7 @@ if __name__ == "__main__":
                 print(f"Error running instance {instance_name}: {str(e)}")
             
             # Clean up temp files
-            for temp_file in [f'results_CPLEX_MIP_C1_{instance_id}.json', f'checkpoint_CPLEX_MIP_C1_{instance_id}.json']:
+            for temp_file in [f'results_CPLEX_MIP_SB_{instance_id}.json', f'checkpoint_CPLEX_MIP_SB_{instance_id}.json']:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
         
@@ -824,7 +833,7 @@ if __name__ == "__main__":
             }
             
             # Save to Excel
-            excel_file = 'CPLEX_MIP_C1.xlsx'
+            excel_file = 'CPLEX_MIP_SB.xlsx'
             if os.path.exists(excel_file):
                 try:
                     existing_df = pd.read_excel(excel_file)
@@ -846,7 +855,7 @@ if __name__ == "__main__":
             print(f"Results saved to {excel_file}")
             
             # Save JSON result for controller
-            with open(f'results_CPLEX_MIP_C1_{instance_id}.json', 'w') as f:
+            with open(f'results_CPLEX_MIP_SB_{instance_id}.json', 'w') as f:
                 json.dump(result, f)
             
             print(f"Instance {instance_name} completed - Runtime: {runtime:.2f}s, Bins: {n_bins}")
@@ -864,7 +873,7 @@ if __name__ == "__main__":
             }
             
             # Save error result to Excel
-            excel_file = 'CPLEX_MIP_C1.xlsx'
+            excel_file = 'CPLEX_MIP_SB.xlsx'
             if os.path.exists(excel_file):
                 try:
                     existing_df = pd.read_excel(excel_file)
@@ -885,5 +894,5 @@ if __name__ == "__main__":
             existing_df.to_excel(excel_file, index=False)
             print(f"Error results saved to {excel_file}")
             
-            with open(f'results_CPLEX_MIP_C1_{instance_id}.json', 'w') as f:
+            with open(f'results_CPLEX_MIP_SB_{instance_id}.json', 'w') as f:
                 json.dump(result, f)
