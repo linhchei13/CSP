@@ -219,7 +219,7 @@ def solve_bin_packing_with_rotation(W, H, rectangles, time_limit=1800):
     n = len(rectangles)
     
     # Calculate upper bound
-    ub = min(n, first_fit_upper_bound_with_rotation(rectangles, W, H))
+    ub = first_fit_upper_bound_with_rotation(rectangles, W, H)
     upper_bound = ub
     max_bins = ub  # Use upper bound as maximum number of bins
     
@@ -641,7 +641,7 @@ if __name__ == "__main__":
                     rectangles.append((w, h))            
             # Calculate bounds
             lower_bound = calculate_lower_bound(rectangles, W, H)
-            upper_bound = min(n_items, first_fit_upper_bound_with_rotation(rectangles, W, H))
+            upper_bound = first_fit_upper_bound_with_rotation(rectangles, W, H)
             
             print(f"Solving 2D Bin Packing with CPLEX CP and C1 symmetry breaking (with rotation) for instance {instance_name}")
             print(f"Bin size: {W}x{H}")

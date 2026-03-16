@@ -290,7 +290,7 @@ def solve_bin_packing_with_rotation(W, H, rectangles, lower_bound, upper_bound, 
     mdl = Model(name="2D_BinPacking_Rotation_SB")
     
     n = len(rectangles)
-    max_bins = min(n, upper_bound)  # No need for more bins than items
+    max_bins = upper_bound
     
     print(f"Creating MIP model with {n} items and up to {max_bins} bins...")
     start_model_time = time.time()
@@ -648,7 +648,7 @@ if __name__ == "__main__":
                     rectangles.append((w, h))            
             # Calculate bounds
             lower_bound = calculate_lower_bound(rectangles, W, H)
-            upper_bound = min(n_items, first_fit_upper_bound_with_rotation(rectangles, W, H))
+            upper_bound = first_fit_upper_bound_with_rotation(rectangles, W, H)
             
             print(f"Solving 2D Bin Packing with CPLEX MIP (with rotation and symmetry breaking) for instance {instance_name}")
             print(f"Bin size: {W}x{H}")

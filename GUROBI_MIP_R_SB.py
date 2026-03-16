@@ -629,7 +629,7 @@ if __name__ == "__main__":
                     rectangles.append((w, h))
             # Calculate bounds
             lower_bound = calculate_lower_bound(rectangles, W, H)
-            upper_bound = min(n_items, first_fit_upper_bound_with_rotation(rectangles, W, H))
+            upper_bound = first_fit_upper_bound_with_rotation(rectangles, W, H)
             
             print(f"Solving 2D Bin Packing with Gurobi MIP (with rotation and symmetry breaking) for instance {instance_name}")
             print(f"Bin size: {W}x{H}")

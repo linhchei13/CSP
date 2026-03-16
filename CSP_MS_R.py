@@ -51,9 +51,9 @@ def handle_interrupt(signum, frame):
 signal.signal(signal.SIGTERM, handle_interrupt)  # Termination signal
 signal.signal(signal.SIGINT, handle_interrupt)   # Keyboard interrupt (Ctrl+C)
 
-# Create CSP_MS_R_SB folder if it doesn't exist
-if not os.path.exists('CSP_MS_R_SB'):
-    os.makedirs('CSP_MS_R_SB')
+# Create CSP_MS_R folder if it doesn't exist
+if not os.path.exists('CSP_MS_R'):
+    os.makedirs('CSP_MS_R')
 
 
 def read_file_instance(instance_name):
@@ -176,7 +176,7 @@ def display_solution(bin_width, bin_height, rectangles, bins_assignment, positio
     
     # Create subplots for each bin
     fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(5*ncols, 5*nrows))
-    fig.suptitle(f'CSP_MS_R_SB - {instance_name} - {num_bins} bins', fontsize=16)
+    fig.suptitle(f'CSP_MS_R - {instance_name} - {num_bins} bins', fontsize=16)
     
     # Handle different subplot configurations
     if num_bins == 1:
@@ -224,9 +224,9 @@ def display_solution(bin_width, bin_height, rectangles, bins_assignment, positio
     
     plt.tight_layout()
     
-    # Save the plot to CSP_MS_R_SB folder
-    plt.savefig(f'CSP_MS_R_SB/{instance_name}.png')
-    print(f"Solution for {instance_name} saved to CSP_MS_R_SB/{instance_name}.png")
+    # Save the plot to CSP_MS_R folder
+    plt.savefig(f'CSP_MS_R/{instance_name}.png')
+    print(f"Solution for {instance_name} saved to CSP_MS_R/{instance_name}.png")
     plt.close()
 
 def positive_range(end):
@@ -631,12 +631,12 @@ if __name__ == "__main__":
     # Phần controller mode
     if len(sys.argv) == 1:
         # This is the controller mode - running without arguments
-        # Create CSP_MS_R_SB folder if it doesn't exist
-        if not os.path.exists('CSP_MS_R_SB'):
-            os.makedirs('CSP_MS_R_SB')
+        # Create CSP_MS_R folder if it doesn't exist
+        if not os.path.exists('CSP_MS_R'):
+            os.makedirs('CSP_MS_R')
         
         # Đọc file Excel hiện có để kiểm tra instances đã hoàn thành
-        excel_file = 'CSP_MS_R_SB.xlsx'
+        excel_file = 'CSP_MS_R.xlsx'
         if os.path.exists(excel_file):
             # Đọc file Excel hiện có nếu nó tồn tại
             existing_df = pd.read_excel(excel_file)
@@ -667,7 +667,7 @@ if __name__ == "__main__":
                 os.remove(f'results_{instance_id}.json')
             
             # Run the instance with runlim, but use THIS script with the instance_id
-            command = f"./runlim -r {TIMEOUT} python3 CSP_MS_R_SB.py {instance_id}"
+            command = f"./runlim -r {TIMEOUT} python3 CSP_MS_R.py {instance_id}"
             
             try:
                 # Run the command and wait for it to complete
@@ -823,7 +823,7 @@ if __name__ == "__main__":
             }
             
             # Ghi kết quả vào Excel trực tiếp
-            excel_file = 'CSP_MS_R_SB.xlsx'
+            excel_file = 'CSP_MS_R.xlsx'
             if os.path.exists(excel_file):
                 try:
                     existing_df = pd.read_excel(excel_file)
@@ -871,7 +871,7 @@ if __name__ == "__main__":
             }
             
             # Ghi kết quả lỗi vào Excel
-            excel_file = 'CSP_MS_R_SB.xlsx'
+            excel_file = 'CSP_MS_R.xlsx'
             if os.path.exists(excel_file):
                 try:
                     existing_df = pd.read_excel(excel_file)

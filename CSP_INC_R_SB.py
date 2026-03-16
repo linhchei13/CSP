@@ -11,7 +11,7 @@ import timeit
 import pandas as pd
 import numpy as np
 from pysat.formula import CNF
-from pysat.solvers import Glucose4
+from pysat.solvers import Glucose42
 
 # Global variables to track best solution found so far
 best_num_bins = float('inf')
@@ -473,7 +473,7 @@ def OPP(rectangles, max_bins, bin_width, bin_height):
     save_checkpoint(instance_id, variables_length, clauses_length, best_num_bins)
 
     # Solve with SAT solver
-    with Glucose4() as solver:
+    with Glucose42() as solver:
         solver.append_formula(cnf)
         lb = calculate_lower_bound(bin_width, bin_height, rectangles)
         ub = max_bins
