@@ -290,7 +290,7 @@ def solve_bin_packing_with_rotation(W, H, rectangles, lower_bound, upper_bound, 
     mdl = Model(name="2D_BinPacking_Rotation_SB")
     
     n = len(rectangles)
-    max_bins = min(n, upper_bound)  # No need for more bins than items
+    max_bins = min(n, upper_bound)
     
     print(f"Creating MIP model with {n} items and up to {max_bins} bins...")
     start_model_time = time.time()
@@ -300,9 +300,13 @@ def solve_bin_packing_with_rotation(W, H, rectangles, lower_bound, upper_bound, 
     x = {}  # x[i,b] = x-position of item i in bin b
     y = {}  # y[i,b] = y-position of item i in bin b
     for i in range(n):
+        wi, hi = rectangles[i]
+        # Allow both orientations in domain bounds to avoid cutting rotated placements.
+        x_ub = max(0, max(W - wi, W - hi))
+        y_ub = max(0, max(H - hi, H - wi))
         for b in range(max_bins):
-            x[i,b] = mdl.integer_var(lb=0, ub=W - rectangles[i][0], name=f'x_{i}_{b}')
-            y[i,b] = mdl.integer_var(lb=0, ub=H - rectangles[i][1], name=f'y_{i}_{b}')
+            x[i,b] = mdl.integer_var(lb=0, ub=x_ub, name=f'x_{i}_{b}')
+            y[i,b] = mdl.integer_var(lb=0, ub=y_ub, name=f'y_{i}_{b}')
     
     # 2. Assignment variables
     z = {}  # z[i,b] = 1 if item i is assigned to bin b
@@ -423,7 +427,7 @@ def solve_bin_packing_with_rotation(W, H, rectangles, lower_bound, upper_bound, 
                                  y[i,b] + M * (1 - above[i,j,b]), f"above_{i}_{j}_{b}")
                 constraint_count += 4
     
-    # 7. Same-sized rectangles symmetry breaking (following Gurobi logic)
+    # 7. Same-sized rectangles symmetry breaking
     for i in range(n):
         for j in range(i+1, n):
             wi, hi = rectangles[i]
@@ -431,17 +435,14 @@ def solve_bin_packing_with_rotation(W, H, rectangles, lower_bound, upper_bound, 
             
             # For identical rectangles (considering rotation)
             if (wi == wj and hi == hj) or (wi == hj and hi == wj):
-                # Apply ordering: i must come before j
+                # Enforce bin-index precedence for identical items.
+                # prefix_i(b) >= prefix_j(b) for all b => bin(i) <= bin(j)
+                # This avoids the O(B^2) formulation while remaining valid.
                 for b in range(max_bins):
-                    for b2 in range(b):
-                        # If i is in bin b and j is in bin b2, then b < b2 is invalid
-                        mdl.add_constraint(z[i,b] + z[j,b2] <= 1, f"same_rect_bin_{i}_{j}_{b}_{b2}")
-                        constraint_count += 1
-                
-                # If both in same bin, impose ordering
-                for b in range(max_bins):
-                    # Either i is to the left of j, or they're at same x and i is below j
-                    mdl.add_constraint(left[i,j,b] >= z[i,b] + z[j,b] - 1, f"same_rect_order_{i}_{j}_{b}")
+                    mdl.add_constraint(
+                        mdl.sum(z[i,k] for k in range(b + 1)) >= mdl.sum(z[j,k] for k in range(b + 1)),
+                        f"same_rect_order_{i}_{j}_{b}"
+                    )
                     constraint_count += 1
     
     # 8. One Pair Constraint (similar to C2 from SPP, following Gurobi logic)
@@ -454,15 +455,22 @@ def solve_bin_packing_with_rotation(W, H, rectangles, lower_bound, upper_bound, 
     
     # Set objective: minimize number of bins used
     mdl.minimize(mdl.sum(u[b] for b in range(max_bins)))
+
+    # CPLEX settings to improve bound closing and optimality proof.
+    mdl.parameters.timelimit = time_limit
+    # mdl.parameters.threads = max(1, (os.cpu_count() or 1) - 1)
+    # mdl.parameters.mip.tolerances.mipgap = 0.001
+    # mdl.parameters.mip.tolerances.absmipgap = 0.01
+    # mdl.parameters.emphasis.mip = 2
+    # mdl.parameters.mip.cuts.mircut = 2
+    # mdl.parameters.mip.cuts.gomory = 2
+    # mdl.parameters.mip.cuts.flowcovers = 2
     
     print(f"Model created in {time.time() - start_model_time:.2f}s")
     print(f"Total constraints: {constraint_count}")
     
     # Save checkpoint before solving
     save_checkpoint(instance_id, best_bins if best_bins != float('inf') else upper_bound)
-    
-    # Set time limit
-    mdl.set_time_limit(time_limit)
     
     # Solve
     print("Solving model...")
@@ -500,14 +508,20 @@ def solve_bin_packing_with_rotation(W, H, rectangles, lower_bound, upper_bound, 
             # Save checkpoint with solution
             save_checkpoint(instance_id, best_bins)
         
+        best_bound = mdl.solve_details.best_bound
+        status_text = str(mdl.solve_details.status).lower()
+        proven_optimal = ('optimal' in status_text) or (
+            best_bound is not None and best_bound >= bins_used - 1e-6
+        )
+
         result = {
-            'status': 'OPTIMAL' if 'optimal' in str(mdl.solve_details.status).lower() else 'FEASIBLE',
+            'status': 'OPTIMAL' if proven_optimal else 'FEASIBLE',
             'n_bins': bins_used,
             'assignments': assignments,
             'positions': positions,
             'rotations': rotations,
             'solve_time': solve_time,
-            'best_bound': mdl.solve_details.best_bound,
+            'best_bound': best_bound,
             'gap': mdl.solve_details.mip_relative_gap * 100 if mdl.solve_details.mip_relative_gap is not None else None
         }
         
@@ -648,7 +662,7 @@ if __name__ == "__main__":
                     rectangles.append((w, h))            
             # Calculate bounds
             lower_bound = calculate_lower_bound(rectangles, W, H)
-            upper_bound = min(n_items, first_fit_upper_bound_with_rotation(rectangles, W, H))
+            upper_bound = first_fit_upper_bound_with_rotation(rectangles, W, H)
             
             print(f"Solving 2D Bin Packing with CPLEX MIP (with rotation and symmetry breaking) for instance {instance_name}")
             print(f"Bin size: {W}x{H}")

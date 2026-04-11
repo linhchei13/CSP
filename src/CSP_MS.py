@@ -37,7 +37,7 @@ def handle_interrupt(signum, frame):
         'Status': 'TIMEOUT'
     }
     
-    with open(f'results_CSP_MS_SB_{instance_id}.json', 'w') as f:
+    with open(f'results_CSP_MS_{instance_id}.json', 'w') as f:
         json.dump(result, f)
     
     sys.exit(0)
@@ -46,9 +46,9 @@ def handle_interrupt(signum, frame):
 signal.signal(signal.SIGTERM, handle_interrupt)
 signal.signal(signal.SIGINT, handle_interrupt)
 
-# Create CSP_MS_SB folder if it doesn't exist
-if not os.path.exists('CSP_MS_SB'):
-    os.makedirs('CSP_MS_SB')
+# Create CSP_MS folder if it doesn't exist
+if not os.path.exists('CSP_MS'):
+    os.makedirs('CSP_MS')
 
 def display_solution(bin_width, bin_height, rectangles, bins_assignment, positions, instance_name):
     num_bins = len(bins_assignment)
@@ -61,7 +61,7 @@ def display_solution(bin_width, bin_height, rectangles, bins_assignment, positio
     
     # Create subplots for each bin
     fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(5*ncols, 5*nrows))
-    fig.suptitle(f'CSP_MS_SB - {instance_name} - {num_bins} bins', fontsize=16)
+    fig.suptitle(f'CSP_MS - {instance_name} - {num_bins} bins', fontsize=16)
     
     # Handle different subplot configurations
     if num_bins == 1:
@@ -103,7 +103,7 @@ def display_solution(bin_width, bin_height, rectangles, bins_assignment, positio
         axes[j].axis('off')
     
     plt.tight_layout()
-    plt.savefig(f'CSP_MS_SB/{instance_name}.png')
+    plt.savefig(f'CSP_MS/{instance_name}.png')
     plt.close()
 
 
@@ -237,7 +237,7 @@ def save_checkpoint(instance_id, variables, clauses, bins, status="IN_PROGRESS")
         'Status': status
     }
     
-    with open(f'checkpoint_CSP_MS_SB_{instance_id}.json', 'w') as f:
+    with open(f'checkpoint_CSP_MS_{instance_id}.json', 'w') as f:
         json.dump(checkpoint, f)
 
 def CSP_MaxSAT(rectangles, lower_bound, upper_bound, bin_width, bin_height):
@@ -554,12 +554,12 @@ def CSP_MaxSAT(rectangles, lower_bound, upper_bound, bin_width, bin_height):
 if __name__ == "__main__":
     # Controller mode - running without arguments
     if len(sys.argv) == 1:
-        # Create CSP_MS_SB folder if it doesn't exist
-        if not os.path.exists('CSP_MS_SB'):
-            os.makedirs('CSP_MS_SB')
+        # Create CSP_MS folder if it doesn't exist
+        if not os.path.exists('CSP_MS'):
+            os.makedirs('CSP_MS')
         
         # Read existing Excel file to check completed instances
-        excel_file = 'CSP_MS_SB.xlsx'
+        excel_file = 'CSP_MS.xlsx'
         if os.path.exists(excel_file):
             existing_df = pd.read_excel(excel_file)
             completed_instances = existing_df['Instance'].tolist() if 'Instance' in existing_df.columns else []
@@ -586,11 +586,11 @@ if __name__ == "__main__":
             print(f"{'=' * 50}")
             
             # Clean up any previous result file
-            if os.path.exists(f'results_CSP_MS_SB_{instance_id}.json'):
-                os.remove(f'results_CSP_MS_SB_{instance_id}.json')
+            if os.path.exists(f'results_CSP_MS_{instance_id}.json'):
+                os.remove(f'results_CSP_MS_{instance_id}.json')
             
             # Run the instance with runlim
-            command = f"./runlim -r {TIMEOUT} python3 CSP_MS_SB.py {instance_id}"
+            command = f"./runlim -r {TIMEOUT} python3 CSP_MS.py {instance_id}"
             try:
                 process = subprocess.Popen(command, shell=True)
                 process.wait()
@@ -600,13 +600,13 @@ if __name__ == "__main__":
                 result = None
                 
                 # Try to read results file first
-                if os.path.exists(f'results_CSP_MS_SB_{instance_id}.json'):
-                    with open(f'results_CSP_MS_SB_{instance_id}.json', 'r') as f:
+                if os.path.exists(f'results_CSP_MS_{instance_id}.json'):
+                    with open(f'results_CSP_MS_{instance_id}.json', 'r') as f:
                         result = json.load(f)
                 
                 # If no results file, check checkpoint
-                elif os.path.exists(f'checkpoint_CSP_MS_SB_{instance_id}.json'):
-                    with open(f'checkpoint_CSP_MS_SB_{instance_id}.json', 'r') as f:
+                elif os.path.exists(f'checkpoint_CSP_MS_{instance_id}.json'):
+                    with open(f'checkpoint_CSP_MS_{instance_id}.json', 'r') as f:
                         result = json.load(f)
                     result['Status'] = 'TIMEOUT'
                     result['Instance'] = instance_name
@@ -646,7 +646,7 @@ if __name__ == "__main__":
                 print(f"Error running instance {instance_name}: {str(e)}")
             
             # Clean up result files and temporary WCNF files
-            for file in [f'results_CSP_MS_SB_{instance_id}.json', f'checkpoint_CSP_MS_SB_{instance_id}.json']:
+            for file in [f'results_CSP_MS_{instance_id}.json', f'checkpoint_CSP_MS_{instance_id}.json']:
                 if os.path.exists(file):
                     os.remove(file)
             
@@ -655,7 +655,7 @@ if __name__ == "__main__":
             temp_wcnf_files = glob.glob('/tmp/tmp*.wcnf')
             for temp_file in temp_wcnf_files:
                 try:
-                    # Only remove files that are older than 1 minute to avoid removing active files
+                    # Only remove files that are older than 1800s to avoid removing active files
                     if os.path.exists(temp_file):
                         file_age = time.time() - os.path.getmtime(temp_file)
                         if file_age >= 1800:  
@@ -736,7 +736,7 @@ if __name__ == "__main__":
             }
             
             # Save to Excel
-            excel_file = 'CSP_MS_SB.xlsx'
+            excel_file = 'CSP_MS.xlsx'
             if os.path.exists(excel_file):
                 try:
                     existing_df = pd.read_excel(excel_file)
@@ -758,7 +758,7 @@ if __name__ == "__main__":
             print(f"Results saved to {excel_file}")
             
             # Save JSON result for controller
-            with open(f'results_CSP_MS_SB_{instance_id}.json', 'w') as f:
+            with open(f'results_CSP_MS_{instance_id}.json', 'w') as f:
                 json.dump(result, f)
             
             print(f"Instance {instance_name} completed - Runtime: {runtime:.2f}s, Bins: {final_bins}")
@@ -777,7 +777,7 @@ if __name__ == "__main__":
             }
             
             # Save error result to Excel
-            excel_file = 'CSP_MS_SB.xlsx'
+            excel_file = 'CSP_MS.xlsx'
             if os.path.exists(excel_file):
                 try:
                     existing_df = pd.read_excel(excel_file)
@@ -798,8 +798,8 @@ if __name__ == "__main__":
             existing_df.to_excel(excel_file, index=False)
             print(f"Error results saved to {excel_file}")
             
-            with open(f'results_CSP_MS_SB_{instance_id}.json', 'w') as f:
+            with open(f'results_CSP_MS_{instance_id}.json', 'w') as f:
                 json.dump(result, f)
-        for file in [f'results_CSP_MS_SB_{instance_id}.json', f'checkpoint_CSP_MS_SB_{instance_id}.json']:
+        for file in [f'results_CSP_MS_{instance_id}.json', f'checkpoint_CSP_MS_{instance_id}.json']:
             if os.path.exists(file):
                 os.remove(file)

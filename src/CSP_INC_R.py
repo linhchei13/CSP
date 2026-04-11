@@ -11,7 +11,7 @@ import timeit
 import pandas as pd
 import numpy as np
 from pysat.formula import CNF
-from pysat.solvers import Glucose4
+from pysat.solvers import Glucose42
 
 # Global variables to track best solution found so far
 best_num_bins = float('inf')
@@ -38,7 +38,7 @@ def handle_interrupt(signum, frame):
         'Status': 'TIMEOUT'
     }
     
-    with open(f'results_CSP_INC_R_SB_{instance_id}.json', 'w') as f:
+    with open(f'results_CSP_INC_R_{instance_id}.json', 'w') as f:
         json.dump(result, f)
     
     sys.exit(0)
@@ -48,9 +48,9 @@ signal.signal(signal.SIGTERM, handle_interrupt)
 signal.signal(signal.SIGINT, handle_interrupt)
 signal.signal(signal.SIGALRM, handle_interrupt)
 
-# Create CSP_INC_R_SB folder if it doesn't exist
-if not os.path.exists('CSP_INC_R_SB'):
-    os.makedirs('CSP_INC_R_SB')
+# Create CSP_INC_R folder if it doesn't exist
+if not os.path.exists('CSP_INC_R'):
+    os.makedirs('CSP_INC_R')
 
 def display_solution(bin_width, bin_height, rectangles, bins_assignment, positions, rotations, instance_name):
     """Display solution with multiple bins and rotation"""
@@ -63,7 +63,7 @@ def display_solution(bin_width, bin_height, rectangles, bins_assignment, positio
     nrows = (num_bins + ncols - 1) // ncols
     # Create subplots for each bin
     fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 6 * nrows))
-    fig.suptitle(f'CSP_INC_R_SB - {instance_name} solution', fontsize=16)
+    fig.suptitle(f'CSP_INC_R - {instance_name} solution', fontsize=16)
     
     # Handle different subplot configurations
     if num_bins == 1:
@@ -114,7 +114,7 @@ def display_solution(bin_width, bin_height, rectangles, bins_assignment, positio
         axes[j].axis('off')
     
     plt.tight_layout()
-    plt.savefig(f'CSP_INC_R_SB/{instance_name}.png')
+    plt.savefig(f'CSP_INC_R/{instance_name}.png')
     plt.close()
 
 
@@ -249,7 +249,7 @@ def save_checkpoint(instance_id, variables, clauses, num_bins, status="IN_PROGRE
         'Status': status
     }
     
-    with open(f'checkpoint_CSP_INC_R_SB_{instance_id}.json', 'w') as f:
+    with open(f'checkpoint_CSP_INC_R_{instance_id}.json', 'w') as f:
         json.dump(checkpoint, f)
 
 def OPP(rectangles, max_bins, bin_width, bin_height):
@@ -415,8 +415,8 @@ def OPP(rectangles, max_bins, bin_width, bin_height):
     for bin_idx in range(max_bins):
         for i in range(len(rectangles)):
             for j in range(i + 1, len(rectangles)):
-                    add_non_overlapping(False, i, j, bin_idx, True, True, True, True)
-                    add_non_overlapping(True, i, j, bin_idx, True, True, True, True)
+                add_non_overlapping(False, i, j, bin_idx, True, True, True, True)
+                add_non_overlapping(True, i, j, bin_idx, True, True, True, True)
 
     # Constraint 6: Domain constraints - items must fit within bins
     for i in range(len(rectangles)):
@@ -458,7 +458,7 @@ def OPP(rectangles, max_bins, bin_width, bin_height):
     save_checkpoint(instance_id, variables_length, clauses_length, best_num_bins)
 
     # Solve with SAT solver
-    with Glucose4() as solver:
+    with Glucose42() as solver:
         solver.append_formula(cnf)
         lb = calculate_lower_bound(bin_width, bin_height, rectangles)
         ub = max_bins
@@ -537,12 +537,12 @@ def OPP(rectangles, max_bins, bin_width, bin_height):
 if __name__ == "__main__":
     # Controller mode
     if len(sys.argv) == 1:
-        # Create CSP_INC_R_SB folder if it doesn't exist
-        if not os.path.exists('CSP_INC_R_SB'):
-            os.makedirs('CSP_INC_R_SB')
+        # Create CSP_INC_R folder if it doesn't exist
+        if not os.path.exists('CSP_INC_R'):
+            os.makedirs('CSP_INC_R')
         
         # Read existing Excel file to check completed instances
-        excel_file = 'CSP_INC_R_SB.xlsx'
+        excel_file = 'CSP_INC_R.xlsx'
         completed_instances = []
         if os.path.exists(excel_file):
             try:
@@ -569,12 +569,12 @@ if __name__ == "__main__":
             print(f"{'=' * 50}")
             
             # Clean up previous result files
-            for temp_file in [f'results_CSP_INC_R_SB_{instance_id}.json', f'checkpoint_CSP_INC_R_SB_{instance_id}.json']:
+            for temp_file in [f'results_CSP_INC_R_{instance_id}.json', f'checkpoint_CSP_INC_R_{instance_id}.json']:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
             
             # Run instance with timeout
-            command = f"./runlim -r {TIMEOUT} python3 CSP_INC_R_SB.py {instance_id}"
+            command = f"./runlim -r {TIMEOUT} python3 CSP_INC_R.py {instance_id}"
             
             try:
                 process = subprocess.Popen(command, shell=True)
@@ -584,11 +584,11 @@ if __name__ == "__main__":
                 # Check results
                 result = None
                 
-                if os.path.exists(f'results_CSP_INC_R_SB_{instance_id}.json'):
-                    with open(f'results_CSP_INC_R_SB_{instance_id}.json', 'r') as f:
+                if os.path.exists(f'results_CSP_INC_R_{instance_id}.json'):
+                    with open(f'results_CSP_INC_R_{instance_id}.json', 'r') as f:
                         result = json.load(f)
-                elif os.path.exists(f'checkpoint_CSP_INC_R_SB_{instance_id}.json'):
-                    with open(f'checkpoint_CSP_INC_R_SB_{instance_id}.json', 'r') as f:
+                elif os.path.exists(f'checkpoint_CSP_INC_R_{instance_id}.json'):
+                    with open(f'checkpoint_CSP_INC_R_{instance_id}.json', 'r') as f:
                         result = json.load(f)
                     result['Status'] = 'TIMEOUT'
                     result['Instance'] = instance_name
@@ -625,7 +625,7 @@ if __name__ == "__main__":
 
             
             # Clean up temp files
-            for temp_file in [f'results_CSP_INC_R_SB_{instance_id}.json', f'checkpoint_CSP_INC_R_SB_{instance_id}.json']:
+            for temp_file in [f'results_CSP_INC_R_{instance_id}.json', f'checkpoint_CSP_INC_R_{instance_id}.json']:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
         
@@ -695,7 +695,7 @@ if __name__ == "__main__":
             }
             
             # Save to Excel
-            excel_file = 'CSP_INC_R_SB.xlsx'
+            excel_file = 'CSP_INC_R.xlsx'
             if os.path.exists(excel_file):
                 try:
                     existing_df = pd.read_excel(excel_file)
@@ -717,7 +717,7 @@ if __name__ == "__main__":
             print(f"Results saved to {excel_file}")
             
             # Save JSON result for controller
-            with open(f'results_CSP_INC_R_SB_{instance_id}.json', 'w') as f:
+            with open(f'results_CSP_INC_R_{instance_id}.json', 'w') as f:
                 json.dump(result, f)
             
             print(f"Instance {instance_name} completed - Runtime: {runtime:.2f}s, Bins: {optimal_bins}")
@@ -735,7 +735,7 @@ if __name__ == "__main__":
             }
             
             # Save error result to Excel
-            excel_file = 'CSP_INC_R_SB.xlsx'
+            excel_file = 'CSP_INC_R.xlsx'
             if os.path.exists(excel_file):
                 try:
                     existing_df = pd.read_excel(excel_file)
@@ -756,5 +756,5 @@ if __name__ == "__main__":
             existing_df.to_excel(excel_file, index=False)
             print(f"Error results saved to {excel_file}")
             
-            with open(f'results_CSP_INC_R_SB_{instance_id}.json', 'w') as f:
+            with open(f'results_CSP_INC_R_{instance_id}.json', 'w') as f:
                 json.dump(result, f)

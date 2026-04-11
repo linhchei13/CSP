@@ -51,9 +51,9 @@ def handle_interrupt(signum, frame):
 signal.signal(signal.SIGTERM, handle_interrupt)  # Termination signal
 signal.signal(signal.SIGINT, handle_interrupt)   # Keyboard interrupt (Ctrl+C)
 
-# Create CSP_MS_R_SB folder if it doesn't exist
-if not os.path.exists('CSP_MS_R_SB'):
-    os.makedirs('CSP_MS_R_SB')
+# Create CSP_MS_R folder if it doesn't exist
+if not os.path.exists('CSP_MS_R'):
+    os.makedirs('CSP_MS_R')
 
 
 def read_file_instance(instance_name):
@@ -124,45 +124,59 @@ instances = set2
 
 
 def first_fit_upper_bound(rectangles, W, H):
-    """Finite First-Fit (FFF) upper bound for 2D bin packing with rotation (Berkey & Wang)."""
-    # Each bin is a list of placed rectangles: (x, y, w, h)
+    """Fast shelf-based FFDH upper bound for 2D bin packing with rotation."""
+    # Sort rectangles by decreasing max dimension for better packing
+    sorted_rects = sorted(rectangles, key=lambda r: max(r[0], r[1]), reverse=True)
+    # Each bin has shelves with (height, remaining_width)
     bins = []
-    def fits(bin_rects, w, h, W, H):
-        # Try to place at the lowest possible y for each x in the bin
-        # For simplicity, try to place at (0, y) for all y up to H-h
-        # and check for overlap with all placed rectangles
-        for y in range(H - h + 1):
-            for x in range(W - w + 1):
-                rect = (x, y, w, h)
-                overlap = False
-                for (px, py, pw, ph) in bin_rects:
-                    if not (x + w <= px or px + pw <= x or y + h <= py or py + ph <= y):
-                        overlap = True
-                        break
-                if not overlap:
-                    return (x, y)
-        return None
-    for rect in rectangles:
+
+    for rect in sorted_rects:
+        w, h = rect[0], rect[1]
+        # Build valid orientations, prefer shorter height first (fits more shelves)
+        orientations = []
+        if w <= W and h <= H:
+            orientations.append((w, h))
+        if h <= W and w <= H and w != h:
+            orientations.append((h, w))
+        orientations.sort(key=lambda o: o[1])
+
+        if not orientations:
+            return float('inf')
+
         placed = False
-        for bin_rects in bins:
-            # Try both orientations in this bin
-            for (rw, rh) in [(rect[0], rect[1]), (rect[1], rect[0])]:
-                pos = fits(bin_rects, rw, rh, W, H)
-                if pos is not None:
-                    bin_rects.append((pos[0], pos[1], rw, rh))
-                    placed = True
+        # Try to fit in existing bins' existing shelves (First Fit)
+        for bin_info in bins:
+            for ow, oh in orientations:
+                for shelf in bin_info['shelves']:
+                    if shelf['remaining_w'] >= ow and shelf['height'] >= oh:
+                        shelf['remaining_w'] -= ow
+                        placed = True
+                        break
+                if placed:
                     break
             if placed:
                 break
+
         if not placed:
-            # Start a new bin, place at (0,0) in best orientation
-            if rect[0] <= W and rect[1] <= H:
-                bins.append([(0, 0, rect[0], rect[1])])
-            elif rect[1] <= W and rect[0] <= H:
-                bins.append([(0, 0, rect[1], rect[0])])
-            else:
-                # Infeasible rectangle
-                return float('inf')
+            # Try to create a new shelf in existing bins
+            for bin_info in bins:
+                for ow, oh in orientations:
+                    if bin_info['used_height'] + oh <= H and ow <= W:
+                        bin_info['shelves'].append({'height': oh, 'remaining_w': W - ow})
+                        bin_info['used_height'] += oh
+                        placed = True
+                        break
+                if placed:
+                    break
+
+        if not placed:
+            # Create a new bin with a new shelf
+            ow, oh = orientations[0]
+            bins.append({
+                'shelves': [{'height': oh, 'remaining_w': W - ow}],
+                'used_height': oh
+            })
+
     return len(bins)
 
 def display_solution(bin_width, bin_height, rectangles, bins_assignment, positions, rotations, instance_name):
@@ -176,7 +190,7 @@ def display_solution(bin_width, bin_height, rectangles, bins_assignment, positio
     
     # Create subplots for each bin
     fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(5*ncols, 5*nrows))
-    fig.suptitle(f'CSP_MS_R_SB - {instance_name} - {num_bins} bins', fontsize=16)
+    fig.suptitle(f'CSP_MS_R - {instance_name} - {num_bins} bins', fontsize=16)
     
     # Handle different subplot configurations
     if num_bins == 1:
@@ -224,9 +238,9 @@ def display_solution(bin_width, bin_height, rectangles, bins_assignment, positio
     
     plt.tight_layout()
     
-    # Save the plot to CSP_MS_R_SB folder
-    plt.savefig(f'CSP_MS_R_SB/{instance_name}.png')
-    print(f"Solution for {instance_name} saved to CSP_MS_R_SB/{instance_name}.png")
+    # Save the plot to CSP_MS_R folder
+    plt.savefig(f'CSP_MS_R/{instance_name}.png')
+    print(f"Solution for {instance_name} saved to CSP_MS_R/{instance_name}.png")
     plt.close()
 
 def positive_range(end):
@@ -253,7 +267,6 @@ def CSP_MaxSAT_Rotation(rectangles, max_bins, bin_width, bin_height):
     """Solve 2D Bin Packing with given number of bins and rotation"""
     global variables_length, clauses_length, best_num_bins, best_rotations
     global optimal_solution, optimal_rotations, upper_bound, wcnf_file
-    cnf = CNF()
     variables = {}
     counter = 1
     print(max_bins)
@@ -299,36 +312,42 @@ def CSP_MaxSAT_Rotation(rectangles, max_bins, bin_width, bin_height):
         for j in range(max_bins):
             variables[f"b{j + 1}"] = counter
             counter += 1
-        cnf = []
+        cnf_count = [0]  # Mutable counter for nested function access
+        
+        def write_hard(clause):
+            """Write a hard clause directly to the WCNF file."""
+            file.write(f"h {' '.join(map(str, clause))} 0\n")
+            cnf_count[0] += 1
+
         # Constraint 1: Each item must be assigned to exactly one bin
         for i in range(len(rectangles)):
             # At least one bin
-            cnf.append([variables[f"x{i + 1},{j + 1}"] for j in range(max_bins)])
+            write_hard([variables[f"x{i + 1},{j + 1}"] for j in range(max_bins)])
             # At most one bin
             for j1 in range(max_bins):
                 for j2 in range(j1 + 1, max_bins):
-                    cnf.append([-variables[f"x{i + 1},{j1 + 1}"], -variables[f"x{i + 1},{j2 + 1}"]])
+                    write_hard([-variables[f"x{i + 1},{j1 + 1}"], -variables[f"x{i + 1},{j2 + 1}"]])
 
         # Constraint 2: Order constraints for position variables
         for i in range(len(rectangles)):
             # x-coordinate order: px[i,e] → px[i,e+1]
             for e in range(bin_width - 1):
-                cnf.append([-variables[f"px{i + 1},{e}"], variables[f"px{i + 1},{e + 1}"]])
+                write_hard([-variables[f"px{i + 1},{e}"], variables[f"px{i + 1},{e + 1}"]])
             # y-coordinate order: py[i,f] → py[i,f+1]
             for f in range(bin_height - 1):
-                cnf.append([-variables[f"py{i + 1},{f}"], variables[f"py{i + 1},{f + 1}"]])
+                write_hard([-variables[f"py{i + 1},{f}"], variables[f"py{i + 1},{f + 1}"]])
 
         # Constraint 3: Bin usage constraints
         for j in range(max_bins):
             for i in range(len(rectangles)):
                 # If item i is in bin j, then bin j is used
-                cnf.append([-variables[f"x{i + 1},{j + 1}"], variables[f"b{j + 1}"]])
+                write_hard([-variables[f"x{i + 1},{j + 1}"], variables[f"b{j + 1}"]])
 
         # Constraint 4: Symmetry Breaking - bin ordering
         for j in range(1, max_bins):
-            cnf.append([-variables[f"b{j + 1}"], variables[f"b{j}"]])
+            write_hard([-variables[f"b{j + 1}"], variables[f"b{j}"]])
         
-        print(f"Number of clauses before symmetry breaking: {len(cnf)}")
+        print(f"Number of clauses before non-overlapping: {cnf_count[0]}")
 
         # Constraint 5: Non-overlapping constraints with rotation
         def add_non_overlapping(rotated, i, j, bin_idx, h1, h2, v1, v2):
@@ -352,71 +371,66 @@ def CSP_MaxSAT_Rotation(rectangles, max_bins, bin_width, bin_height):
             
             bin_condition = [-variables[f"x{i + 1},{bin_idx + 1}"], -variables[f"x{j + 1},{bin_idx + 1}"]]
             
-            # Four-literal clause with rotation conditions
-            four_literal = bin_condition.copy()
-            if h1: four_literal.append(variables[f"lr{i + 1},{j + 1}"])
-            if h2: four_literal.append(variables[f"lr{j + 1},{i + 1}"])
-            if v1: four_literal.append(variables[f"ud{i + 1},{j + 1}"])
-            if v2: four_literal.append(variables[f"ud{j + 1},{i + 1}"])
-            
-            cnf.append(four_literal + [i_rotation])
-            cnf.append(four_literal + [j_rotation])
+            # Four-literal clause: at least one separation direction must hold
+            # Only generate once per pair per bin (the rotated=False and rotated=True
+            # guarded versions resolve to this single unguarded clause)
+            if not rotated:
+                four_literal = bin_condition.copy()
+                if h1: four_literal.append(variables[f"lr{i + 1},{j + 1}"])
+                if h2: four_literal.append(variables[f"lr{j + 1},{i + 1}"])
+                if v1: four_literal.append(variables[f"ud{i + 1},{j + 1}"])
+                if v2: four_literal.append(variables[f"ud{j + 1},{i + 1}"])
+                write_hard(four_literal)
 
             # Position-based constraints with rotation
-            if h1:
-                for e in range(min(bin_width, i_width)):
-                    cnf.append([i_rotation, bin_condition[0], bin_condition[1],
-                            -variables[f"lr{i + 1},{j + 1}"], -variables[f"px{j + 1},{e}"]])
+            # Thanks to order encoding contrapositive (¬px[i,e+1] → ¬px[i,e]),
+            # we only need one clause per direction (the highest index) instead of a loop.
+            if h1 and min(bin_width, i_width) > 0:
+                write_hard([i_rotation, bin_condition[0], bin_condition[1],
+                        -variables[f"lr{i + 1},{j + 1}"], -variables[f"px{j + 1},{min(bin_width, i_width) - 1}"]])
             
-            if h2:
-                for e in range(min(bin_width, j_width)):
-                    cnf.append([j_rotation, bin_condition[0], bin_condition[1],
-                            -variables[f"lr{j + 1},{i + 1}"], -variables[f"px{i + 1},{e}"]])
+            if h2 and min(bin_width, j_width) > 0:
+                write_hard([j_rotation, bin_condition[0], bin_condition[1],
+                        -variables[f"lr{j + 1},{i + 1}"], -variables[f"px{i + 1},{min(bin_width, j_width) - 1}"]])
 
-            if v1:
-                for f in range(min(bin_height, i_height)):
-                    cnf.append([i_rotation, bin_condition[0], bin_condition[1],
-                            -variables[f"ud{i + 1},{j + 1}"], -variables[f"py{j + 1},{f}"]])
+            if v1 and min(bin_height, i_height) > 0:
+                write_hard([i_rotation, bin_condition[0], bin_condition[1],
+                        -variables[f"ud{i + 1},{j + 1}"], -variables[f"py{j + 1},{min(bin_height, i_height) - 1}"]])
             
-            if v2:
-                for f in range(min(bin_height, j_height)):
-                    cnf.append([j_rotation, bin_condition[0], bin_condition[1],
-                            -variables[f"ud{j + 1},{i + 1}"], -variables[f"py{i + 1},{f}"]])
+            if v2 and min(bin_height, j_height) > 0:
+                write_hard([j_rotation, bin_condition[0], bin_condition[1],
+                        -variables[f"ud{j + 1},{i + 1}"], -variables[f"py{i + 1},{min(bin_height, j_height) - 1}"]])
 
             # Position-based non-overlapping with rotation
             for e in positive_range(bin_width - i_width):
                 if h1:
-                    cnf.append([i_rotation, bin_condition[0], bin_condition[1],
+                    write_hard([i_rotation, bin_condition[0], bin_condition[1],
                             -variables[f"lr{i + 1},{j + 1}"],
                             variables[f"px{i + 1},{e}"],
                             -variables[f"px{j + 1},{e + i_width}"]])
 
             for e in positive_range(bin_width - j_width):
                 if h2:
-                    cnf.append([j_rotation, bin_condition[0], bin_condition[1],
+                    write_hard([j_rotation, bin_condition[0], bin_condition[1],
                             -variables[f"lr{j + 1},{i + 1}"],
                             variables[f"px{j + 1},{e}"],
                             -variables[f"px{i + 1},{e + j_width}"]])
 
             for f in positive_range(bin_height - i_height):
                 if v1:
-                    cnf.append([i_rotation, bin_condition[0], bin_condition[1],
+                    write_hard([i_rotation, bin_condition[0], bin_condition[1],
                             -variables[f"ud{i + 1},{j + 1}"],
                             variables[f"py{i + 1},{f}"],
                             -variables[f"py{j + 1},{f + i_height}"]])
             
             for f in positive_range(bin_height - j_height):
                 if v2:
-                    cnf.append([j_rotation, bin_condition[0], bin_condition[1],
+                    write_hard([j_rotation, bin_condition[0], bin_condition[1],
                             -variables[f"ud{j + 1},{i + 1}"],
                             variables[f"py{j + 1},{f}"],
                             -variables[f"py{i + 1},{f + j_height}"]])
 
-        # Find maximum width for symmetry breaking
-        max_width = max([int(rectangle[0]) for rectangle in rectangles])
-        second_max_width = max([int(rectangle[0]) for rectangle in rectangles if int(rectangle[0]) != max_width])
-
-        # Apply non-overlapping constraints for all pairs in all bins with symmetry breaking
+        # Apply non-overlapping constraints for all pairs in all bins
         for bin_idx in range(max_bins):
             for i in range(len(rectangles)):
                 for j in range(i + 1, len(rectangles)):
@@ -424,58 +438,53 @@ def CSP_MaxSAT_Rotation(rectangles, max_bins, bin_width, bin_height):
                         add_non_overlapping(True, i, j, bin_idx, True, True, True, True)
 
         # Constraint 6: Domain constraints - items must fit within bins
+        # Thanks to order encoding (px[i,e] → px[i,e+1]), only one clause per
+        # dimension suffices: forcing px[i, W-w] = true propagates to all higher indices.
         for i in range(len(rectangles)):
             for bin_idx in range(max_bins):
-                # Normal orientation
+                # Normal orientation (guarded by r_i: clause satisfied if item is rotated)
                 if rectangles[i][0] > bin_width:
-                    cnf.append([-variables[f"x{i + 1},{bin_idx + 1}"], variables[f"r{i + 1}"]])
+                    write_hard([-variables[f"x{i + 1},{bin_idx + 1}"], variables[f"r{i + 1}"]])
                 else:
-                    for e in range(bin_width - rectangles[i][0], bin_width):
-                        cnf.append([-variables[f"x{i + 1},{bin_idx + 1}"], variables[f"r{i + 1}"],
-                                variables[f"px{i + 1},{e}"]])
+                    write_hard([-variables[f"x{i + 1},{bin_idx + 1}"], variables[f"r{i + 1}"],
+                            variables[f"px{i + 1},{bin_width - rectangles[i][0]}"]])
                 
                 if rectangles[i][1] > bin_height:
-                    cnf.append([-variables[f"x{i + 1},{bin_idx + 1}"], variables[f"r{i + 1}"]])
+                    write_hard([-variables[f"x{i + 1},{bin_idx + 1}"], variables[f"r{i + 1}"]])
                 else:
-                    for f in range(bin_height - rectangles[i][1], bin_height):
-                        cnf.append([-variables[f"x{i + 1},{bin_idx + 1}"], variables[f"r{i + 1}"],
-                                variables[f"py{i + 1},{f}"]])
+                    write_hard([-variables[f"x{i + 1},{bin_idx + 1}"], variables[f"r{i + 1}"],
+                            variables[f"py{i + 1},{bin_height - rectangles[i][1]}"]])
 
-                # Rotated orientation
+                # Rotated orientation (guarded by -r_i: clause satisfied if item is not rotated)
                 if rectangles[i][1] > bin_width:
-                    cnf.append([-variables[f"x{i + 1},{bin_idx + 1}"], -variables[f"r{i + 1}"]])
+                    write_hard([-variables[f"x{i + 1},{bin_idx + 1}"], -variables[f"r{i + 1}"]])
                 else:
-                    for e in range(bin_width - rectangles[i][1], bin_width):
-                        cnf.append([-variables[f"x{i + 1},{bin_idx + 1}"], -variables[f"r{i + 1}"],
-                                variables[f"px{i + 1},{e}"]])
+                    write_hard([-variables[f"x{i + 1},{bin_idx + 1}"], -variables[f"r{i + 1}"],
+                            variables[f"px{i + 1},{bin_width - rectangles[i][1]}"]])
                 
                 if rectangles[i][0] > bin_height:
-                    cnf.append([-variables[f"x{i + 1},{bin_idx + 1}"], -variables[f"r{i + 1}"]])
+                    write_hard([-variables[f"x{i + 1},{bin_idx + 1}"], -variables[f"r{i + 1}"]])
                 else:
-                    for f in range(bin_height - rectangles[i][0], bin_height):
-                        cnf.append([-variables[f"x{i + 1},{bin_idx + 1}"], -variables[f"r{i + 1}"],
-                                variables[f"py{i + 1},{f}"]])
+                    write_hard([-variables[f"x{i + 1},{bin_idx + 1}"], -variables[f"r{i + 1}"],
+                            variables[f"py{i + 1},{bin_height - rectangles[i][0]}"]])
                         
         soft_clauses = []
         # Soft clauses: minimize the number of bins used
         for j in range(lower_bound, max_bins):
             soft_clauses.append((1, [-variables[f"b{j + 1}"]]))
-        # Write hard clauses with 'h' prefix
-        for clause in cnf:
-            file.write(f"h {' '.join(map(str, clause))} 0\n")
-        
+
         # Write soft clauses with their weights
         for weight, clause in soft_clauses:
             file.write(f"{weight} {' '.join(map(str, clause))} 0\n")
         
         # For debugging, print details about the WCNF file
-        print(f"Created WCNF file with: {len(cnf)} hard clauses and {len(soft_clauses)} soft clauses")
+        print(f"Created WCNF file with: {cnf_count[0]} hard clauses and {len(soft_clauses)} soft clauses")
         print(f"Variable count: {counter-1}")
         file.flush()
 
 
     variables_length = len(variables)
-    clauses_length = len(cnf) + len(soft_clauses)
+    clauses_length = cnf_count[0] + len(soft_clauses)
     
     # Save checkpoint
     save_checkpoint(instance_id, variables_length, clauses_length, best_num_bins)
@@ -631,12 +640,12 @@ if __name__ == "__main__":
     # Phần controller mode
     if len(sys.argv) == 1:
         # This is the controller mode - running without arguments
-        # Create CSP_MS_R_SB folder if it doesn't exist
-        if not os.path.exists('CSP_MS_R_SB'):
-            os.makedirs('CSP_MS_R_SB')
+        # Create CSP_MS_R folder if it doesn't exist
+        if not os.path.exists('CSP_MS_R'):
+            os.makedirs('CSP_MS_R')
         
         # Đọc file Excel hiện có để kiểm tra instances đã hoàn thành
-        excel_file = 'CSP_MS_R_SB.xlsx'
+        excel_file = 'CSP_MS_R.xlsx'
         if os.path.exists(excel_file):
             # Đọc file Excel hiện có nếu nó tồn tại
             existing_df = pd.read_excel(excel_file)
@@ -667,7 +676,7 @@ if __name__ == "__main__":
                 os.remove(f'results_{instance_id}.json')
             
             # Run the instance with runlim, but use THIS script with the instance_id
-            command = f"./runlim -r {TIMEOUT} python3 CSP_MS_R_SB.py {instance_id}"
+            command = f"./runlim -r {TIMEOUT} python3 CSP_MS_R.py {instance_id}"
             
             try:
                 # Run the command and wait for it to complete
@@ -823,7 +832,7 @@ if __name__ == "__main__":
             }
             
             # Ghi kết quả vào Excel trực tiếp
-            excel_file = 'CSP_MS_R_SB.xlsx'
+            excel_file = 'CSP_MS_R.xlsx'
             if os.path.exists(excel_file):
                 try:
                     existing_df = pd.read_excel(excel_file)
@@ -871,7 +880,7 @@ if __name__ == "__main__":
             }
             
             # Ghi kết quả lỗi vào Excel
-            excel_file = 'CSP_MS_R_SB.xlsx'
+            excel_file = 'CSP_MS_R.xlsx'
             if os.path.exists(excel_file):
                 try:
                     existing_df = pd.read_excel(excel_file)

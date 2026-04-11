@@ -1,4 +1,5 @@
-from gurobipy import Model, GRB, quicksum
+
+from ortools.linear_solver import pywraplp
 import matplotlib.pyplot as plt
 import numpy as np
 import time
@@ -18,6 +19,7 @@ import matplotlib.colors as mcolors
 best_bins = float('inf')
 best_assignments = []
 best_positions = []
+best_rotations = []
 upper_bound = 0
 
 # Signal handler for graceful interruption
@@ -32,10 +34,11 @@ def handle_interrupt(signum, frame):
         'Instance': instances[instance_id],
         'Runtime': timeit.default_timer() - start,
         'N_Bins': current_bins,
-        'Status': 'TIMEOUT'
+        'Status': 'TIMEOUT',
+        'Allow_Rotation': 'Yes'
     }
     
-    with open(f'results_GUROBI_MIP_SB_{instance_id}.json', 'w') as f:
+    with open(f'results_OR-TOOLS_MIP_R_SB_{instance_id}.json', 'w') as f:
         json.dump(result, f)
     
     sys.exit(0)
@@ -45,50 +48,8 @@ signal.signal(signal.SIGTERM, handle_interrupt)
 signal.signal(signal.SIGINT, handle_interrupt)
 
 # Create output folder if it doesn't exist
-if not os.path.exists('GUROBI_MIP_SB'):
-    os.makedirs('GUROBI_MIP_SB')
-
-
-def first_fit_upper_bound(rectangles, W, H):
-    """First-fit heuristic to get upper bound"""
-    # Each bin is a list of placed rectangles: (x, y, w, h)
-    bins = []
-    
-    def fits(bin_rects, w, h, W, H):
-        # Try to place at the lowest possible y for each x in the bin
-        for y in range(H - h + 1):
-            for x in range(W - w + 1):
-                rect = (x, y, w, h)
-                overlap = False
-                for (px, py, pw, ph) in bin_rects:
-                    if not (x + w <= px or px + pw <= x or y + h <= py or py + ph <= y):
-                        overlap = True
-                        break
-                if not overlap:
-                    return (x, y)
-        return None
-    
-    for rect in rectangles:
-        w, h = rect[0], rect[1]
-        placed = False
-        
-        # Try to place in existing bins
-        for bin_rects in bins:
-            pos = fits(bin_rects, w, h, W, H)
-            if pos is not None:
-                bin_rects.append((pos[0], pos[1], w, h))
-                placed = True
-                break
-        
-        # If not placed, create a new bin
-        if not placed:
-            if w <= W and h <= H:
-                bins.append([(0, 0, w, h)])
-            else:
-                # Rectangle doesn't fit in any bin
-                return float('inf')
-    
-    return len(bins)
+if not os.path.exists('OR-TOOLS_MIP_R_SB'):
+    os.makedirs('OR-TOOLS_MIP_R_SB')
 
 
 def read_file_instance(instance_name):
@@ -140,10 +101,11 @@ set2 = [
     "CHL1", "CHL2", "CHL5", "CHL6", "CHL7",
     "CU1", "CU2",
     "CW1", "CW2", "CW3",
-     "Hchl2", "Hchl3s", "Hchl4s", "Hchl6s",
+     "Hchl2", "Hchl3s", "Hchl4s", "Hchl5s", "Hchl6s",
     "Hchl7s", "Hchl8s", "Hchl9",
     "HH", "OF1", "OF2",
-    "STS2", "STS4", "W", "2", "3" 
+    "STS2", "STS4", "W", "2", "3"
+    
 ]
 
 
@@ -157,6 +119,62 @@ set3 = [
 # Updated instance list with actual available instances
 instances = set2
 
+def first_fit_upper_bound(rectangles, W, H, allow_rotation=True):
+    """First-fit heuristic to get upper bound with rotation option"""
+    # Each bin is a list of placed rectangles: (x, y, w, h, rotated)
+    bins = []
+    
+    def fits(bin_rects, w, h, W, H):
+        # Try to place at the lowest possible y for each x in the bin
+        for y in range(H - h + 1):
+            for x in range(W - w + 1):
+                rect = (x, y, w, h)
+                overlap = False
+                for (px, py, pw, ph, _) in bin_rects:
+                    if not (x + w <= px or px + pw <= x or y + h <= py or py + ph <= y):
+                        overlap = True
+                        break
+                if not overlap:
+                    return (x, y)
+        return None
+    
+    for rect in rectangles:
+        original_w, original_h = rect[0], rect[1]
+        placed = False
+        
+        # Try both orientations if rotation is allowed
+        orientations = [(original_w, original_h, False)]
+        if allow_rotation and original_w != original_h:
+            orientations.append((original_h, original_w, True))
+        
+        # Try to place in existing bins
+        for w, h, rotated in orientations:
+            if placed:
+                break
+                
+            for bin_rects in bins:
+                pos = fits(bin_rects, w, h, W, H)
+                if pos is not None:
+                    bin_rects.append((pos[0], pos[1], w, h, rotated))
+                    placed = True
+                    break
+        
+        # If not placed, create a new bin
+        if not placed:
+            # Try the best orientation for a new bin
+            best_w, best_h, best_rotated = orientations[0]
+            if allow_rotation and len(orientations) > 1:
+                # Choose orientation that leaves more space
+                if orientations[1][0] <= W and orientations[1][1] <= H:
+                    best_w, best_h, best_rotated = orientations[1]
+            
+            if best_w <= W and best_h <= H:
+                bins.append([(0, 0, best_w, best_h, best_rotated)])
+            else:
+                # Rectangle doesn't fit in any bin
+                return float('inf')
+    
+    return len(bins)
 
 def calculate_lower_bound(rectangles, W, H):
     """Calculate lower bound for number of bins needed"""
@@ -167,17 +185,18 @@ def calculate_lower_bound(rectangles, W, H):
 def save_checkpoint(instance_id, bins, status="IN_PROGRESS"):
     """Save checkpoint for current progress"""
     checkpoint = {
-        'Instance': instances[instance_id],
+        "Instance": instances[instance_id],
         'Runtime': timeit.default_timer() - start,
         'N_Bins': bins if bins != float('inf') else upper_bound,
-        'Status': status
+        'Status': status,
+        'Allow_Rotation': 'Yes'
     }
     
-    with open(f'checkpoint_GUROBI_MIP_SB_{instance_id}.json', 'w') as f:
+    with open(f'checkpoint_OR-TOOLS_MIP_R_SB_{instance_id}.json', 'w') as f:
         json.dump(checkpoint, f)
 
-def display_solution(W, H, rectangles, positions, assignments, instance_name):
-    """Display solution with one subplot per bin"""
+def display_solution(W, H, rectangles, positions, assignments, rotations, instance_name):
+    """Display solution with one subplot per bin, showing rotations"""
     n_bins = len(set(assignments))
     n_rectangles = len(rectangles)
     
@@ -186,7 +205,7 @@ def display_solution(W, H, rectangles, positions, assignments, instance_name):
     nrows = math.ceil(n_bins / ncols)
     
     fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 4, nrows * 4))
-    fig.suptitle(f'Solution for {instance_name} - {n_bins} bins', fontsize=16)
+    fig.suptitle(f'Solution for {instance_name} - {n_bins} bins (with rotation)', fontsize=16)
     
     # Handle different subplot configurations
     if n_bins == 1:
@@ -213,7 +232,14 @@ def display_solution(W, H, rectangles, positions, assignments, instance_name):
             
             # Draw each rectangle in this bin
             for item_idx in items:
-                width, height = rectangles[item_idx]
+                original_width, original_height = rectangles[item_idx]
+                
+                # Apply rotation if needed
+                if rotations[item_idx]:
+                    width, height = original_height, original_width
+                else:
+                    width, height = original_width, original_height
+                
                 x, y = positions[item_idx]
                 
                 rect = plt.Rectangle((x, y), width, height, 
@@ -222,8 +248,9 @@ def display_solution(W, H, rectangles, positions, assignments, instance_name):
                                    alpha=0.7)
                 ax.add_patch(rect)
                 
-                # Add item number
-                ax.text(x + width/2, y + height/2, str(item_idx + 1), 
+                # Add item number and rotation info
+                rot_info = 'R' if rotations[item_idx] else 'NR'
+                ax.text(x + width/2, y + height/2, f'{item_idx + 1}\n{rot_info}', 
                        ha='center', va='center', fontweight='bold')
             
             # Set grid and ticks
@@ -236,12 +263,12 @@ def display_solution(W, H, rectangles, positions, assignments, instance_name):
         axes[j].axis('off')
     
     plt.tight_layout(rect=[0, 0, 1, 0.95])  # Adjust for suptitle
-    plt.savefig(f'GUROBI_MIP_SB/{instance_name}.png', dpi=150, bbox_inches='tight')
+    plt.savefig(f'OR-TOOLS_MIP_R_SB/{instance_name}.png', dpi=150, bbox_inches='tight')
     plt.close()
 
-def solve_bin_packing(W, H, rectangles, lower_bound, upper_bound, time_limit=1800):
+def solve_bin_packing(W, H, rectangles, lower_bound, upper_bound, time_limit=890):
     """
-    Solve 2D Bin Packing using Gurobi MIP with C1 symmetry breaking
+    Solve 2D Bin Packing using OR-Tools MIP with rotation and symmetry breaking
     
     Args:
         W: Width of each bin
@@ -254,15 +281,18 @@ def solve_bin_packing(W, H, rectangles, lower_bound, upper_bound, time_limit=180
     Returns:
         Dictionary with solution or None if no solution found
     """
-    global best_bins, best_assignments, best_positions
+    global best_bins, best_assignments, best_positions, best_rotations
     
-    # Create the model
-    mdl = Model("2D_BinPacking_SB")
-    mdl.setParam('OutputFlag', 1)  # Enable Gurobi output logs
-    mdl.setParam('TimeLimit', time_limit)  # Set time limit
+    # Create the solver
+    solver = pywraplp.Solver.CreateSolver('SCIP')
+    if not solver:
+        return None
+    
+    # Set time limit
+    solver.set_time_limit(time_limit * 1000)  # Time limit in milliseconds
     
     n = len(rectangles)
-    max_bins = upper_bound # No need for more bins than items
+    max_bins = min(n, upper_bound)  # No need for more bins than items
     
     print(f"Creating MIP model with {n} items and up to {max_bins} bins...")
     start_model_time = time.time()
@@ -273,48 +303,55 @@ def solve_bin_packing(W, H, rectangles, lower_bound, upper_bound, time_limit=180
     y = {}  # y[i,b] = y-position of item i in bin b
     for i in range(n):
         for b in range(max_bins):
-            x[i,b] = mdl.addVar(lb=0, ub=W - rectangles[i][0], vtype=GRB.INTEGER, name=f'x_{i}_{b}')
-            y[i,b] = mdl.addVar(lb=0, ub=H - rectangles[i][1], vtype=GRB.INTEGER, name=f'y_{i}_{b}')
+            x[i,b] = solver.NumVar(0, W, f'x_{i}_{b}')
+            y[i,b] = solver.NumVar(0, H, f'y_{i}_{b}')
     
     # 2. Assignment variables
     z = {}  # z[i,b] = 1 if item i is assigned to bin b
     for i in range(n):
         for b in range(max_bins):
-            z[i,b] = mdl.addVar(vtype=GRB.BINARY, name=f'z_{i}_{b}')
+            z[i,b] = solver.BoolVar(f'z_{i}_{b}')
     
     # 3. Bin usage variables
     u = {}  # u[b] = 1 if bin b is used
     for b in range(max_bins):
-        u[b] = mdl.addVar(vtype=GRB.BINARY, name=f'u_{b}')
+        u[b] = solver.BoolVar(f'u_{b}')
     
-    # 4. Auxiliary variables for non-overlapping constraints
+    # 4. Rotation variables
+    rotate = {}  # rotate[i] = 1 if item i is rotated
+    for i in range(n):
+        rotate[i] = solver.BoolVar(f'rotate_{i}')
+    
+    # 5. Auxiliary variables for non-overlap (following debug logic)
     left = {}   # left[i,j,b] = 1 if item i is to the left of item j in bin b
     right = {}  # right[i,j,b] = 1 if item i is to the right of item j in bin b
     below = {}  # below[i,j,b] = 1 if item i is below item j in bin b
     above = {}  # above[i,j,b] = 1 if item i is above item j in bin b
     
+    # Declare auxiliary variables for all pairs (i, j, b) where i != j
     for i in range(n):
-        for j in range(i+1, n):
-            for b in range(max_bins):
-                left[i,j,b] = mdl.addVar(vtype=GRB.BINARY, name=f'left_{i}_{j}_{b}')
-                right[i,j,b] = mdl.addVar(vtype=GRB.BINARY, name=f'right_{i}_{j}_{b}')
-                below[i,j,b] = mdl.addVar(vtype=GRB.BINARY, name=f'below_{i}_{j}_{b}')
-                above[i,j,b] = mdl.addVar(vtype=GRB.BINARY, name=f'above_{i}_{j}_{b}')
+        for j in range(n):
+            if i != j:
+                for b in range(max_bins):
+                    left[i,j,b] = solver.BoolVar(f'left_{i}_{j}_{b}')
+                    right[i,j,b] = solver.BoolVar(f'right_{i}_{j}_{b}')
+                    below[i,j,b] = solver.BoolVar(f'below_{i}_{j}_{b}')
+                    above[i,j,b] = solver.BoolVar(f'above_{i}_{j}_{b}')
     
     # Constraints
     
     # 1. Each item must be placed in exactly one bin
     for i in range(n):
-        mdl.addConstr(quicksum(z[i,b] for b in range(max_bins)) == 1, f"assign_{i}")
+        solver.Add(sum(z[i,b] for b in range(max_bins)) == 1)
     
     # 2. Bin usage constraints - if an item is in bin b, bin b must be used
     for b in range(max_bins):
         for i in range(n):
-            mdl.addConstr(z[i,b] <= u[b], f"usage_{b}_{i}")
+            solver.Add(z[i,b] <= u[b])
     
-    # 3. C1 Symmetry Breaking: Bins are used in order
+    # 3. Symmetry Breaking: Bins are used in order
     for b in range(1, max_bins):
-        mdl.addConstr(u[b] <= u[b-1], f"order_{b}")
+        solver.Add(u[b] <= u[b-1])
     
     # Find largest rectangle by area for additional symmetry breaking
     max_area_idx = 0
@@ -326,55 +363,82 @@ def solve_bin_packing(W, H, rectangles, lower_bound, upper_bound, time_limit=180
             max_area = area
             max_area_idx = i
     
-    # 4. C1 additional symmetry breaking: Place largest rectangle in first bin
+    # 4. Additional symmetry breaking: Place largest rectangle in first bin
     if n > 1:
-        mdl.addConstr(z[max_area_idx, 0] == 1, "largest_first")
+        solver.Add(z[max_area_idx, 0] == 1)
         
-        # Position the largest rectangle in the bottom-left quadrant
-        mdl.addConstr(x[max_area_idx, 0] <= (W - rectangles[max_area_idx][0]) // 2, "largest_x")
-        mdl.addConstr(y[max_area_idx, 0] <= (H - rectangles[max_area_idx][1]) // 2, "largest_y")
+        # Domain reduction for largest rectangle
+        w_max, h_max = rectangles[max_area_idx]
+        # Considering possible rotation for domain reduction
+        solver.Add(x[max_area_idx, 0] <= (W - min(w_max, h_max)) // 2)
     
-    # 5. Non-overlapping constraints - Fixed version
+    # 5. Bound constraints considering rotation
+    for i in range(n):
+        w, h = rectangles[i]
+        for b in range(max_bins):
+            # Width constraint considering rotation
+            solver.Add(x[i,b] + w * (1 - rotate[i]) + h * rotate[i] <= W + (W + H) * (1 - z[i,b]))
+            # Height constraint considering rotation
+            solver.Add(y[i,b] + h * (1 - rotate[i]) + w * rotate[i] <= H + (W + H) * (1 - z[i,b]))
+    
+    # 6. Non-overlapping constraints with correct auxiliary variables logic
+    M = W + H  # Big-M value
+    
     for i in range(n):
         for j in range(i+1, n):
+            wi, hi = rectangles[i]
+            wj, hj = rectangles[j]
+            
             for b in range(max_bins):
-                # If both items i and j are in bin b, they must not overlap
-                M = max(W, H)  # Big-M value
-                
                 # At least one separation must be true if both items are in bin b
-                mdl.addConstr(left[i,j,b] + right[i,j,b] + below[i,j,b] + above[i,j,b] >= 
-                              z[i,b] + z[j,b] - 1, f"overlap_{i}_{j}_{b}")
+                solver.Add(left[i,j,b] + right[i,j,b] + below[i,j,b] + above[i,j,b] >= 
+                          z[i,b] + z[j,b] - 1)
                 
-                # Position constraints based on separation choices
-                # i to left of j: x[i] + w[i] <= x[j]
-                mdl.addConstr(x[i,b] + rectangles[i][0] <= x[j,b] + M * (1 - left[i,j,b]), f"left_{i}_{j}_{b}")
+                # Position constraints based on separation choices (with rotation)
+                # i to left of j: x[i] + width_i <= x[j]
+                solver.Add(x[i,b] + wi * (1 - rotate[i]) + hi * rotate[i] <= 
+                          x[j,b] + M * (1 - left[i,j,b]))
                 
-                # i to right of j: x[j] + w[j] <= x[i]  
-                mdl.addConstr(x[j,b] + rectangles[j][0] <= x[i,b] + M * (1 - right[i,j,b]), f"right_{i}_{j}_{b}")
+                # i to right of j: x[j] + width_j <= x[i]
+                solver.Add(x[j,b] + wj * (1 - rotate[j]) + hj * rotate[j] <= 
+                          x[i,b] + M * (1 - right[i,j,b]))
                 
-                # i below j: y[i] + h[i] <= y[j]
-                mdl.addConstr(y[i,b] + rectangles[i][1] <= y[j,b] + M * (1 - below[i,j,b]), f"below_{i}_{j}_{b}")
+                # i below j: y[i] + height_i <= y[j]
+                solver.Add(y[i,b] + hi * (1 - rotate[i]) + wi * rotate[i] <= 
+                          y[j,b] + M * (1 - below[i,j,b]))
                 
-                # i above j: y[j] + h[j] <= y[i]
-                mdl.addConstr(y[j,b] + rectangles[j][1] <= y[i,b] + M * (1 - above[i,j,b]), f"above_{i}_{j}_{b}")
+                # i above j: y[j] + height_j <= y[i]
+                solver.Add(y[j,b] + hj * (1 - rotate[j]) + wj * rotate[j] <= 
+                          y[i,b] + M * (1 - above[i,j,b]))
     
-    # 6. Same-sized rectangles C1 constraint
+    # 7. Same-sized rectangles symmetry breaking
     for i in range(n):
         for j in range(i+1, n):
-            if rectangles[i][0] == rectangles[j][0] and rectangles[i][1] == rectangles[j][1]:
-                # For identical rectangles, apply ordering: i must come before j
+            wi, hi = rectangles[i]
+            wj, hj = rectangles[j]
+            
+            # For identical rectangles (considering rotation)
+            if (wi == wj and hi == hj) or (wi == hj and hi == wj):
+                # Apply ordering: i must come before j
                 for b in range(max_bins):
                     for b2 in range(b):
                         # If i is in bin b and j is in bin b2, then b < b2 is invalid
-                        mdl.addConstr(z[i,b] + z[j,b2] <= 1, f"identical_{i}_{j}_{b}_{b2}")
+                        solver.Add(z[i,b] + z[j,b2] <= 1)
                 
-                # If both in same bin, impose ordering (lexicographic)
+                # If both in same bin, impose ordering
                 for b in range(max_bins):
                     # Either i is to the left of j, or they're at same x and i is below j
-                    mdl.addConstr(left[i,j,b] + below[i,j,b] >= z[i,b] + z[j,b] - 1, f"lex_{i}_{j}_{b}")
+                    solver.Add(left[i,j,b] >= z[i,b] + z[j,b] - 1)
+    
+    # 8. One Pair Constraint (similar to C2 from SPP)
+    if n >= 2:
+        # Rectangle 1 cannot be to the left of rectangle 0
+        solver.Add(left[1,0,0] == 0)
+        # Rectangle 1 cannot be below rectangle 0
+        solver.Add(below[1,0,0] == 0)
     
     # Set objective: minimize number of bins used
-    mdl.setObjective(quicksum(u[b] for b in range(max_bins)), GRB.MINIMIZE)
+    solver.Minimize(sum(u[b] for b in range(max_bins)))
     
     print(f"Model created in {time.time() - start_model_time:.2f}s")
     
@@ -384,48 +448,50 @@ def solve_bin_packing(W, H, rectangles, lower_bound, upper_bound, time_limit=180
     # Solve
     print("Solving model...")
     solve_start = time.time()
-    mdl.optimize()
+    status = solver.Solve()
     solve_time = time.time() - solve_start
     
-    print(f"Solver finished in {solve_time:.2f}s with status: {mdl.status}")
+    print(f"Solver finished in {solve_time:.2f}s with status: {status}")
     
-    if mdl.status == GRB.OPTIMAL or mdl.status == GRB.TIME_LIMIT:
-        if mdl.solCount > 0:
-            # Count bins actually used
-            bins_used = sum(1 for b in range(max_bins) if u[b].X > 0.5)
+    if status == pywraplp.Solver.OPTIMAL or status == pywraplp.Solver.FEASIBLE:
+        # Count bins actually used
+        bins_used = sum(1 for b in range(max_bins) if u[b].solution_value() > 0.5)
+        
+        # Update best solution
+        if bins_used < best_bins:
+            best_bins = bins_used
             
-            # Update best solution
-            if bins_used < best_bins:
-                best_bins = bins_used
-                
-                # Extract item assignments
-                assignments = [-1] * n
-                positions = [(0, 0)] * n
-                
-                for i in range(n):
-                    for b in range(max_bins):
-                        if z[i,b].X > 0.5:
-                            assignments[i] = b
-                            positions[i] = (int(x[i,b].X), int(y[i,b].X))
-                            break
-                
-                best_assignments = assignments.copy()
-                best_positions = positions.copy()
-                
-                # Save checkpoint with solution
-                save_checkpoint(instance_id, best_bins)
+            # Extract item assignments, positions, and rotations
+            assignments = [-1] * n
+            positions = [(0, 0)] * n
+            rotations = [False] * n
             
-            result = {
-                'status': 'OPTIMAL' if mdl.status == GRB.OPTIMAL else 'TIMEOUT',
-                'n_bins': bins_used,
-                'assignments': assignments,
-                'positions': positions,
-                'solve_time': solve_time,
-                'objective_value': mdl.objVal,
-                'gap': mdl.MIPGap * 100 if hasattr(mdl, 'MIPGap') else None
-            }
+            for i in range(n):
+                rotations[i] = rotate[i].solution_value() > 0.5
+                for b in range(max_bins):
+                    if z[i,b].solution_value() > 0.5:
+                        assignments[i] = b
+                        positions[i] = (x[i,b].solution_value(), y[i,b].solution_value())
+                        break
             
-            return result
+            best_assignments = assignments.copy()
+            best_positions = positions.copy()
+            best_rotations = rotations.copy()
+            
+            # Save checkpoint with solution
+            save_checkpoint(instance_id, best_bins)
+        
+        result = {
+            'status': 'COMPLETE' if status == pywraplp.Solver.OPTIMAL else 'FEASIBLE',
+            'n_bins': bins_used,
+            'assignments': assignments,
+            'positions': positions,
+            'rotations': rotations,
+            'solve_time': solve_time,
+            'objective_value': solver.Objective().Value()
+        }
+        
+        return result
     else:
         print("No solution found")
         return None
@@ -434,11 +500,12 @@ if __name__ == "__main__":
     # Controller mode
     if len(sys.argv) == 1:
         # Create output folder if it doesn't exist
-        if not os.path.exists('GUROBI_MIP_SB'):
-            os.makedirs('GUROBI_MIP_SB')
+        if not os.path.exists('OR-TOOLS_MIP_R_SB'):
+            os.makedirs('OR-TOOLS_MIP_R_SB')
         
         # Read existing Excel file to check completed instances
-        excel_file = 'GUROBI_MIP_SB.xlsx'
+        excel_file = 'OR-TOOLS_MIP_R_SB.xlsx'
+        completed_instances = []
         if os.path.exists(excel_file):
             try:
                 existing_df = pd.read_excel(excel_file)
@@ -457,7 +524,7 @@ if __name__ == "__main__":
         for instance_id in range(1, len(instances)):
             instance_name = instances[instance_id]
             
-            # Skip if already completed
+            # # Skip if already completed
             if instance_name in completed_instances:
                 print(f"\nSkipping instance {instance_id}: {instance_name} (already completed)")
                 continue
@@ -467,12 +534,12 @@ if __name__ == "__main__":
             print(f"{'=' * 50}")
             
             # Clean up previous result files
-            for temp_file in [f'results_GUROBI_MIP_SB_{instance_id}.json', f'checkpoint_GUROBI_MIP_SB_{instance_id}.json']:
+            for temp_file in [f'results_OR-TOOLS_MIP_R_SB_{instance_id}.json', f'checkpoint_OR-TOOLS_MIP_R_SB_{instance_id}.json']:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
             
             # Run instance with runlim
-            command = f"./runlim -r {TIMEOUT} python3 GUROBI_MIP_SB.py {instance_id}"
+            command = f"./runlim -r {TIMEOUT} python3 OR-TOOLS_MIP_R_SB.py {instance_id}"
             
             try:
                 process = subprocess.Popen(command, shell=True)
@@ -481,12 +548,12 @@ if __name__ == "__main__":
                 
                 # Check results
                 result = None
-
-                if os.path.exists(f'results_GUROBI_MIP_SB_{instance_id}.json'):
-                    with open(f'results_GUROBI_MIP_SB_{instance_id}.json', 'r') as f:
+                
+                if os.path.exists(f'results_OR-TOOLS_MIP_R_SB_{instance_id}.json'):
+                    with open(f'results_OR-TOOLS_MIP_R_SB_{instance_id}.json', 'r') as f:
                         result = json.load(f)
-                elif os.path.exists(f'checkpoint_GUROBI_MIP_SB_{instance_id}.json'):
-                    with open(f'checkpoint_GUROBI_MIP_SB_{instance_id}.json', 'r') as f:
+                elif os.path.exists(f'checkpoint_OR-TOOLS_MIP_R_SB_{instance_id}.json'):
+                    with open(f'checkpoint_OR-TOOLS_MIP_R_SB_{instance_id}.json', 'r') as f:
                         result = json.load(f)
                     result['Status'] = 'TIMEOUT'
                     result['Instance'] = instance_name
@@ -524,7 +591,7 @@ if __name__ == "__main__":
                 print(f"Error running instance {instance_name}: {str(e)}")
             
             # Clean up temp files
-            for temp_file in [f'results_GUROBI_MIP_SB_{instance_id}.json', f'checkpoint_GUROBI_MIP_SB_{instance_id}.json']:
+            for temp_file in [f'results_OR-TOOLS_MIP_R_SB_{instance_id}.json', f'checkpoint_OR-TOOLS_MIP_R_SB_{instance_id}.json']:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
         
@@ -544,6 +611,7 @@ if __name__ == "__main__":
             best_bins = float('inf')
             best_assignments = []
             best_positions = []
+            best_rotations = []
             
             # Read input
             input_data = read_file_instance(instance_name)
@@ -554,17 +622,16 @@ if __name__ == "__main__":
             rectangles = []
             for i in range(2, 2 + n_items):
                 line = input_data[i].split()
-                w = int(line[0])
-                h = int(line[1])
-                demand = int(line[2])  # Unused in current model
+                demand = int(line[2])
                 for _ in range(demand):
+                    w = int(line[0])
+                    h = int(line[1])
                     rectangles.append((w, h))
-            
             # Calculate bounds
             lower_bound = calculate_lower_bound(rectangles, W, H)
-            upper_bound = first_fit_upper_bound(rectangles, W, H)
+            upper_bound = min(n_items, first_fit_upper_bound(rectangles, W, H, allow_rotation=True))
             
-            print(f"Solving 2D Bin Packing with Gurobi MIP and C1 symmetry breaking for instance {instance_name}")
+            print(f"Solving 2D Bin Packing with OR-Tools MIP, rotation and symmetry breaking for instance {instance_name}")
             print(f"Bin size: {W}x{H}")
             print(f"Number of items: {n_items}")
             print(f"Lower bound: {lower_bound}")
@@ -579,14 +646,13 @@ if __name__ == "__main__":
             # Process result
             if solution:
                 n_bins = solution['n_bins']
-                status = 'OPTIMAL' if solution['status'] == 'OPTIMAL' else 'TIMELIMIT'
+                status = 'COMPLETE' if solution['status'] == 'COMPLETE' else 'FEASIBLE'
                 
                 # Display solution
-                display_solution(W, H, rectangles, solution['positions'], solution['assignments'], instance_name)
+                display_solution(W, H, rectangles, solution['positions'], solution['assignments'], 
+                               solution['rotations'], instance_name)
                 
                 print(f"Solution found: {n_bins} bins, Status: {status}")
-                if solution['gap'] is not None:
-                    print(f"Optimality gap: {solution['gap']:.2f}%")
             else:
                 n_bins = best_bins if best_bins != float('inf') else upper_bound
                 status = 'ERROR'
@@ -597,11 +663,12 @@ if __name__ == "__main__":
                 'Instance': instance_name,
                 'Runtime': runtime,
                 'N_Bins': n_bins,
-                'Status': status
+                'Status': status,
+                'Allow_Rotation': 'Yes'
             }
             
             # Save to Excel
-            excel_file = 'GUROBI_MIP_SB.xlsx'
+            excel_file = 'OR-TOOLS_MIP_R_SB.xlsx'
             if os.path.exists(excel_file):
                 try:
                     existing_df = pd.read_excel(excel_file)
@@ -623,7 +690,7 @@ if __name__ == "__main__":
             print(f"Results saved to {excel_file}")
             
             # Save JSON result for controller
-            with open(f'results_GUROBI_MIP_SB_{instance_id}.json', 'w') as f:
+            with open(f'results_OR-TOOLS_MIP_R_SB_{instance_id}.json', 'w') as f:
                 json.dump(result, f)
             
             print(f"Instance {instance_name} completed - Runtime: {runtime:.2f}s, Bins: {n_bins}")
@@ -637,11 +704,12 @@ if __name__ == "__main__":
                 'Instance': instance_name,
                 'Runtime': timeit.default_timer() - start,
                 'N_Bins': best_bins if best_bins != float('inf') else upper_bound,
-                'Status': 'ERROR'
+                'Status': 'ERROR',
+                'Allow_Rotation': 'Yes'
             }
             
             # Save error result to Excel
-            excel_file = 'GUROBI_MIP_SB.xlsx'
+            excel_file = 'OR-TOOLS_MIP_R_SB.xlsx'
             if os.path.exists(excel_file):
                 try:
                     existing_df = pd.read_excel(excel_file)
@@ -662,5 +730,5 @@ if __name__ == "__main__":
             existing_df.to_excel(excel_file, index=False)
             print(f"Error results saved to {excel_file}")
             
-            with open(f'results_GUROBI_MIP_SB_{instance_id}.json', 'w') as f:
+            with open(f'results_OR-TOOLS_MIP_R_SB_{instance_id}.json', 'w') as f:
                 json.dump(result, f)
