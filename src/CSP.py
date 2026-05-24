@@ -176,11 +176,6 @@ set3 = [
 # Updated instance list with actual available instances
 instances = set2
 
-if os.path.exists("CSP_timeout.txt"):
-    with open("CSP_timeout.txt", 'r') as f:
-        instances = [line.strip() for line in f if line.strip()]
-
-
 def positive_range(end):
     if end < 0:
         return []
