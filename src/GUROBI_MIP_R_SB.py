@@ -430,7 +430,6 @@ def solve_bin_packing_with_rotation(W, H, rectangles, lower_bound, upper_bound, 
                     # Either i is to the left of j, or they're at same x and i is below j
                     mdl.addConstr(left[i,j,b] >= z[i,b] + z[j,b] - 1, f"same_rect_order_{i}_{j}_{b}")
     
-    # 8. One Pair Constraint (similar to C2 from SPP, following OR-TOOLS logic)
     if n >= 2:
         # Rectangle 1 cannot be to the left of rectangle 0
         mdl.addConstr(left[1,0,0] == 0, f"pair_left_0")
